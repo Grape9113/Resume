@@ -12,7 +12,7 @@ struct PlaybackSession: Sendable {
     let currentTime: TimeInterval
     let duration: TimeInterval
     let chapters: [Chapter]
-    let streamURL: URL
+    let streamURLs: [URL]
 }
 
 struct ABSProgress: Decodable, Sendable {
@@ -71,20 +71,24 @@ actor AudiobookshelfClient {
         ]
         let data = try JSONSerialization.data(withJSONObject: body)
         let response: PlayResponse = try await authorized(path: "api/items/\(itemID)/play", method: "POST", body: data)
-        guard let connection = try await vault.loadConnection(),
-              let path = response.audioTracks.first?.contentUrl,
-              let streamURL = URL(string: path, relativeTo: connection.server)?.absoluteURL else { throw URLError(.badServerResponse) }
+        guard let connection = try await vault.loadConnection() else { throw URLError(.badServerResponse) }
+        let streamURLs = response.audioTracks.compactMap { URL(string: $0.contentUrl, relativeTo: connection.server)?.absoluteURL }
+        guard !streamURLs.isEmpty else { throw URLError(.badServerResponse) }
         return PlaybackSession(
             id: response.id,
             currentTime: response.currentTime,
             duration: response.duration,
             chapters: response.chapters.enumerated().map { .init(id: String($0.offset), title: $0.element.title, start: $0.element.start) },
-            streamURL: streamURL
+            streamURLs: streamURLs
         )
     }
 
     func progress(itemID: String) async throws -> ABSProgress {
         try await authorized(path: "api/me/progress/\(itemID)")
+    }
+
+    func coverData(itemID: String) async throws -> Data {
+        try await authorizedData(path: "api/items/\(itemID)/cover?width=640&height=640&format=jpeg")
     }
 
     func pushProgress(itemID: String, position: TimeInterval, duration: TimeInterval, isFinished: Bool) async throws {
@@ -121,6 +125,16 @@ actor AudiobookshelfClient {
             let replacement = try await recoverSession(connection: connection)
             return try await send(request(with: replacement.accessToken))
         }
+    }
+
+    private func authorizedData(path: String) async throws -> Data {
+        guard let connection = try await vault.loadConnection(), let token = try await vault.loadTokens()?.accessToken,
+              let url = URL(string: path, relativeTo: connection.server)?.absoluteURL else { throw AuthenticationError.missingCredentials }
+        var request = URLRequest(url: url)
+        request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        let (data, response) = try await session.data(for: request)
+        guard let http = response as? HTTPURLResponse, 200..<300 ~= http.statusCode else { throw APIError.invalidResponse }
+        return data
     }
 
     private func recoverSession(connection: StoredCredentials) async throws -> AuthenticationTokens {

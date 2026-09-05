@@ -39,6 +39,23 @@ struct ResumePanel: View {
             model.beginSearch(with: String(press.characters))
             return .handled
         }
+        .onKeyPress(keys: [",", "v", "q"]) { press in
+            if press.key == ",", press.modifiers == .control {
+                model.showSettings()
+                return .handled
+            }
+            if press.key == "q", press.modifiers == .command {
+                model.quit()
+                return .handled
+            }
+            if press.key == "v", press.modifiers == .command, model.mode == .player,
+               let text = NSPasteboard.general.string(forType: .string), !text.isEmpty {
+                model.beginSearch(with: text)
+                return .handled
+            }
+            return .ignored
+        }
+        .onDisappear { if model.mode == .search { model.cancelSearch() } }
         .onAppear { NSApplication.shared.setActivationPolicy(.accessory) }
     }
 
@@ -106,6 +123,7 @@ struct ResumePanel: View {
             Text("Settings").font(.headline)
             LabeledContent("Server", value: model.server)
             LabeledContent("Username", value: model.username)
+            LabeledContent("Library", value: model.selectedLibraryName)
             Toggle("Launch at Login", isOn: Binding(get: { model.launchAtLogin }, set: { model.setLaunchAtLogin($0) }))
             Divider()
             Button("Sign Out", role: .destructive) { Task { await model.signOut() } }
@@ -120,11 +138,34 @@ struct ResumePanel: View {
     }
 
     private func cover(for book: Audiobook?) -> some View {
-        ZStack { RoundedRectangle(cornerRadius: 8).fill(.quaternary); Image(systemName: "book.closed.fill").font(.system(size: 54)).foregroundStyle(.secondary) }
+        ZStack(alignment: .topTrailing) {
+            RoundedRectangle(cornerRadius: 8).fill(.quaternary)
+            if let book { ArtworkImage(model: model, book: book) }
+            else { Image(systemName: "book.closed.fill").font(.system(size: 54)).foregroundStyle(.secondary).frame(maxWidth: .infinity, maxHeight: .infinity) }
+            if let book, model.isRecentlyFinished(book) {
+                Image(systemName: "checkmark.circle.fill").font(.title).foregroundStyle(.white, .green).padding(8).accessibilityLabel("Recently finished")
+            }
+        }
             .aspectRatio(1, contentMode: .fit).accessibilityLabel(book.map { "Cover of \($0.title)" } ?? "No active audiobook")
     }
 
     private func time(_ seconds: TimeInterval) -> String {
         let total = max(Int(seconds), 0); return String(format: "%d:%02d:%02d", total / 3600, total % 3600 / 60, total % 60)
+    }
+}
+
+private struct ArtworkImage: View {
+    let model: AppModel
+    let book: Audiobook
+    @State private var image: NSImage?
+
+    var body: some View {
+        Group {
+            if let image { Image(nsImage: image).resizable().scaledToFill() }
+            else { Image(systemName: "book.closed.fill").font(.system(size: 54)).foregroundStyle(.secondary) }
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .clipShape(.rect(cornerRadius: 8))
+        .task(id: book.id + (book.coverRevision ?? "")) { image = await model.artwork(for: book) }
     }
 }
