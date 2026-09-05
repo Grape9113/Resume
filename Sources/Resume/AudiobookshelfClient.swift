@@ -101,6 +101,11 @@ actor AudiobookshelfClient {
         let _: EmptyResponse = try await authorized(path: "api/session/\(sessionID)/sync", method: "POST", body: body)
     }
 
+    func close(sessionID: String, position: TimeInterval, duration: TimeInterval, timeListened: TimeInterval) async throws {
+        let body = try JSONEncoder().encode(SyncBody(currentTime: position, timeListened: timeListened, duration: duration))
+        let _: EmptyResponse = try await authorized(path: "api/session/\(sessionID)/close", method: "POST", body: body)
+    }
+
     func logout() async throws {
         guard let connection = try await vault.loadConnection(), let refresh = try await vault.loadTokens()?.refreshToken else { return }
         var request = URLRequest(url: connection.server.appending(path: "logout"))

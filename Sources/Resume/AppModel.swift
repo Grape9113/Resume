@@ -152,12 +152,15 @@ final class AppModel {
 
     func acceptSearch() {
         guard let result = searchResult else { return }
+        Task { await closePlaybackSession() }
         player.clear()
         playbackSessionID = nil
         isPlaying = false
         activeBook = result
         position = 0
         duration = result.duration
+        speed = speeds[result.id] ?? 2
+        didMarkFinished = recentlyFinishedAt[result.id] != nil
         cancelSearch()
         Task { await restoreActivePosition() }
         Task { await saveLocalState() }
@@ -172,7 +175,7 @@ final class AppModel {
     func togglePlayback() async {
         guard let book = activeBook else { return }
         do {
-            if isPlaying { player.pause() }
+            if isPlaying { player.pause(); await closePlaybackSession() }
             else if player.hasItem { player.play() }
             else {
                 let session = try await client.startPlayback(itemID: book.id)
@@ -220,7 +223,7 @@ final class AppModel {
         guard let book = activeBook else { return }
         do {
             if let remote = try? await client.progress(itemID: book.id) { preserve(remote.currentTime, source: .audiobookshelf, comparedWith: position) }
-            try await client.pushProgress(itemID: book.id, position: position, duration: duration, isFinished: didMarkFinished)
+            try await client.pushProgress(itemID: book.id, position: position, duration: duration, isFinished: recentlyFinishedAt[book.id] != nil)
         } catch { errorMessage = "Force Push failed. Your Mac position is preserved." }
     }
 
@@ -333,6 +336,7 @@ final class AppModel {
         player.pause()
         Task {
             await saveLocalState()
+            await closePlaybackSession()
             if hasPendingSynchronization { await forcePush() }
             NSApplication.shared.terminate(nil)
         }
@@ -341,12 +345,24 @@ final class AppModel {
     func systemWillSleep() {
         Task {
             await saveLocalState()
-            if isPlaying { await forcePush() }
+            if isPlaying { await closePlaybackSession() }
         }
     }
 
     func systemDidWake() async {
         guard !isPlaying else { return }
         await forceFetch()
+    }
+
+    private func closePlaybackSession() async {
+        guard let sessionID = playbackSessionID else { return }
+        do {
+            try await client.close(sessionID: sessionID, position: position, duration: duration, timeListened: max(position - lastSyncedPosition, 0))
+            playbackSessionID = nil
+            hasPendingSynchronization = false
+        } catch {
+            hasPendingSynchronization = true
+            errorMessage = "Progress is saved on this Mac and will be retried."
+        }
     }
 }
