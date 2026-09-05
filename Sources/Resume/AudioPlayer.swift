@@ -40,4 +40,5 @@ final class AudioPlayer {
     func play() { player.playImmediately(atRate: player.defaultRate) }
     func pause() { player.pause() }
     func seek(to position: TimeInterval) { player.seek(to: CMTime(seconds: position, preferredTimescale: 600)) }
+    func clear() { player.pause(); player.replaceCurrentItem(with: nil) }
 }

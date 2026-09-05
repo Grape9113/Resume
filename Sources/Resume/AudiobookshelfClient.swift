@@ -108,23 +108,59 @@ actor AudiobookshelfClient {
     private func authorized<T: Decodable>(path: String, method: String = "GET", body: Data? = nil) async throws -> T {
         guard let connection = try await vault.loadConnection(), let token = try await vault.loadTokens()?.accessToken else { throw AuthenticationError.missingCredentials }
         guard let url = URL(string: path, relativeTo: connection.server)?.absoluteURL else { throw URLError(.badURL) }
-        var request = URLRequest(url: url)
-        request.httpMethod = method
-        request.httpBody = body
-        request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
-        if body != nil { request.setValue("application/json", forHTTPHeaderField: "Content-Type") }
-        return try await send(request)
+        func request(with accessToken: String) -> URLRequest {
+            var request = URLRequest(url: url)
+            request.httpMethod = method
+            request.httpBody = body
+            request.setValue("Bearer \(accessToken)", forHTTPHeaderField: "Authorization")
+            if body != nil { request.setValue("application/json", forHTTPHeaderField: "Content-Type") }
+            return request
+        }
+        do { return try await send(request(with: token)) }
+        catch APIError.unauthorized {
+            let replacement = try await recoverSession(connection: connection)
+            return try await send(request(with: replacement.accessToken))
+        }
+    }
+
+    private func recoverSession(connection: StoredCredentials) async throws -> AuthenticationTokens {
+        if let refresh = try await vault.loadTokens()?.refreshToken {
+            var request = URLRequest(url: connection.server.appending(path: "auth/refresh"))
+            request.httpMethod = "POST"
+            request.setValue(refresh, forHTTPHeaderField: "x-refresh-token")
+            do {
+                let response: RefreshResponse = try await send(request)
+                let tokens = AuthenticationTokens(accessToken: response.accessToken, refreshToken: response.refreshToken)
+                try await vault.save(tokens: tokens)
+                return tokens
+            } catch APIError.unauthorized {
+                try await vault.clearTokens()
+            }
+        }
+        var request = URLRequest(url: connection.server.appending(path: "login"))
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.setValue("true", forHTTPHeaderField: "x-return-tokens")
+        request.httpBody = try JSONEncoder().encode(["username": connection.username, "password": connection.password])
+        let response: LoginResponse = try await send(request)
+        let tokens = AuthenticationTokens(accessToken: response.user.accessToken, refreshToken: response.user.refreshToken)
+        try await vault.save(tokens: tokens)
+        return tokens
     }
 
     private func send<T: Decodable>(_ request: URLRequest) async throws -> T {
         let (data, response) = try await session.data(for: request)
-        guard let http = response as? HTTPURLResponse, 200..<300 ~= http.statusCode else { throw URLError(.userAuthenticationRequired) }
+        guard let http = response as? HTTPURLResponse else { throw APIError.invalidResponse }
+        if http.statusCode == 401 { throw APIError.unauthorized }
+        guard 200..<300 ~= http.statusCode else { throw APIError.status(http.statusCode) }
         if T.self == EmptyResponse.self, data.isEmpty || data == Data("OK".utf8) { return EmptyResponse() as! T }
         return try JSONDecoder().decode(T.self, from: data)
     }
 }
 
 private struct LoginResponse: Decodable { let user: User; struct User: Decodable { let accessToken: String; let refreshToken: String } }
+private struct RefreshResponse: Decodable { let accessToken: String; let refreshToken: String }
+private enum APIError: Error { case unauthorized; case status(Int); case invalidResponse }
 private struct ItemsResponse: Decodable { let results: [Item] }
 private struct Item: Decodable {
     let id: String; let media: Media; let updatedAt: Int64?; let userMediaProgress: Progress?

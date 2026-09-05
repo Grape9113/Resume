@@ -23,6 +23,7 @@ final class AppModel {
     var chapters: [Chapter] = []
     var knownPositions: [KnownPosition] = []
     var errorMessage: String?
+    var hasPendingSynchronization = false
     var isBusy = false
     var launchAtLogin = SMAppService.mainApp.status == .enabled
 
@@ -110,10 +111,14 @@ final class AppModel {
 
     func acceptSearch() {
         guard let result = searchResult else { return }
+        player.clear()
+        playbackSessionID = nil
+        isPlaying = false
         activeBook = result
         position = 0
         duration = result.duration
         cancelSearch()
+        Task { await restoreActivePosition() }
     }
 
     func cancelSearch() {
@@ -182,8 +187,23 @@ final class AppModel {
             try? await client.pushProgress(itemID: book.id, position: position, duration: duration, isFinished: true)
         }
         guard let playbackSessionID, abs(position - lastSyncedPosition) >= 15 else { return }
-        lastSyncedPosition = position
-        try? await client.sync(sessionID: playbackSessionID, position: position, duration: duration, timeListened: 15)
+        do {
+            try await client.sync(sessionID: playbackSessionID, position: position, duration: duration, timeListened: 15)
+            lastSyncedPosition = position
+            hasPendingSynchronization = false
+        } catch {
+            hasPendingSynchronization = true
+            errorMessage = "Progress is saved on this Mac and will be retried."
+        }
+    }
+
+    private func restoreActivePosition() async {
+        guard let book = activeBook else { return }
+        do {
+            let remote = try await client.progress(itemID: book.id)
+            position = remote.currentTime
+            duration = remote.duration
+        } catch { errorMessage = "The server position is temporarily unavailable." }
     }
 
     func showSettings() { mode = mode == .settings ? .player : .settings }

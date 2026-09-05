@@ -17,7 +17,7 @@ Resume is a single-context repository:
 /
 ├── CONTEXT.md
 ├── docs/adr/
-└── src/
+└── Sources/
 ```
 
 ## Use the glossary’s vocabulary
