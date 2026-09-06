@@ -121,6 +121,13 @@ actor AudiobookshelfClient {
     )
   }
 
+  func chapters(itemID: String) async throws -> [Chapter] {
+    let response: ItemDetailResponse = try await authorized(path: "api/items/\(itemID)?expanded=1")
+    return response.media.chapters.enumerated().map {
+      Chapter(id: String($0.offset), title: $0.element.title, start: $0.element.start)
+    }
+  }
+
   func progress(itemID: String) async throws -> ABSProgress {
     do {
       return try await authorized(path: "api/me/progress/\(itemID)")
@@ -341,6 +348,14 @@ private struct PlayResponse: Decodable {
     let start: Double
   }
   struct Track: Decodable { let contentUrl: String }
+}
+private struct ItemDetailResponse: Decodable {
+  let media: Media
+  struct Media: Decodable { let chapters: [RemoteChapter] }
+  struct RemoteChapter: Decodable {
+    let title: String
+    let start: Double
+  }
 }
 private struct ProgressBody: Encodable {
   let currentTime: Double

@@ -37,7 +37,7 @@ final class AppModel {
   @ObservationIgnored private let progressEvents = ProgressEventClient()
   @ObservationIgnored private lazy var systemMonitor = SystemMonitor(
     onNetworkAvailable: { [weak self] in Task { await self?.networkBecameAvailable() } },
-    onOutputDeviceChanged: { [weak self] in self?.outputDeviceChanged() }
+    onOutputDeviceRemoved: { [weak self] in self?.outputDeviceRemoved() }
   )
   @ObservationIgnored private lazy var client = AudiobookshelfClient(vault: vault)
   @ObservationIgnored private lazy var player = AudioPlayer(
@@ -62,6 +62,7 @@ final class AppModel {
   @ObservationIgnored private var synchronizationFailureCount = 0
   @ObservationIgnored private var nextSynchronizationAttemptAt: Date?
   @ObservationIgnored private var synchronizationRetryTask: Task<Void, Never>?
+  @ObservationIgnored private var recoveryExpiryTask: Task<Void, Never>?
 
   init() {
     _ = systemMonitor
@@ -169,6 +170,7 @@ final class AppModel {
     }
     if let activeBook { applyPlaybackRecord(for: activeBook) }
     mode = .player
+    if let activeBook { await loadChapters(for: activeBook) }
     if let connection = try? await vault.loadConnection() {
       progressEvents.connect(
         server: connection.server,
@@ -205,8 +207,11 @@ final class AppModel {
     applyPlaybackRecord(for: result)
     usesRecoveredPosition = false
     cancelSearch()
-    Task { await restoreActivePosition() }
-    Task { await saveLocalState() }
+    Task {
+      await loadChapters(for: result)
+      await restoreActivePosition()
+      await saveLocalState()
+    }
   }
 
   func cancelSearch() {
@@ -390,6 +395,7 @@ final class AppModel {
       switch synchronization.prepareUpload(localPosition: position, server: snapshot, now: .now) {
       case .suspend(let alternatives):
         knownPositions = alternatives
+        beginRecoveryWindowIfNeeded()
         hasPendingSynchronization = true
         errorMessage = "Another listening position is available. Choose which one to keep."
         await saveLocalState()
@@ -433,6 +439,7 @@ final class AppModel {
           hasPendingSynchronization = false
         case .suspend(let alternatives):
           knownPositions = alternatives
+          if isPlaying { beginRecoveryWindowIfNeeded() }
           position = remote.currentTime
           duration = remote.duration > 0 ? remote.duration : book.duration
           hasPendingSynchronization = true
@@ -478,7 +485,12 @@ final class AppModel {
     player.pause()
     progressEvents.disconnect()
     try? await client.logout()
-    try? await vault.clear()
+    do {
+      try await vault.clear()
+    } catch {
+      errorMessage = "Resume could not remove its saved Keychain credentials. Try Sign Out again."
+      return
+    }
     await stateStore.clear()
     await artworkStore.clear()
     UserDefaults.standard.removeObject(forKey: "selectedLibraryName")
@@ -496,6 +508,7 @@ final class AppModel {
     speed = 2
     hasPendingSynchronization = false
     recoveryExpiresAt = nil
+    recoveryExpiryTask?.cancel()
     selectedLibraryName = ""
     server = ""
     username = ""
@@ -590,6 +603,7 @@ final class AppModel {
           if activeBook?.id == bookID {
             preserve(remote.currentTime, source: .audiobookshelf, comparedWith: 0)
             recoveryExpiresAt = Date().addingTimeInterval(PlaybackLedger.recoveryLifetime)
+            scheduleRecoveryExpiry()
             position = 0
             player.seek(to: 0)
             didMarkFinished = false
@@ -610,7 +624,7 @@ final class AppModel {
     player.pause()
     Task {
       await saveLocalState()
-      await closePlaybackSession()
+      await boundedClosePlaybackSession()
       NSApplication.shared.terminate(nil)
     }
   }
@@ -621,7 +635,7 @@ final class AppModel {
     player.pause()
     Task {
       await saveLocalState()
-      await closePlaybackSession()
+      await boundedClosePlaybackSession()
     }
   }
 
@@ -637,7 +651,7 @@ final class AppModel {
     if wantsPlayback, player.hasItem { player.play() } else if !isPlaying { await forceFetch() }
   }
 
-  private func outputDeviceChanged() {
+  private func outputDeviceRemoved() {
     guard isPlaying else { return }
     wantsPlayback = false
     isPlaying = false
@@ -734,13 +748,38 @@ final class AppModel {
     }
   }
 
+  private func boundedClosePlaybackSession() async {
+    guard playbackSessionID != nil else { return }
+    await withTaskGroup(of: Void.self) { group in
+      group.addTask { [weak self] in await self?.closePlaybackSession() }
+      group.addTask { try? await Task.sleep(for: .seconds(2)) }
+      _ = await group.next()
+      group.cancelAll()
+    }
+  }
+
+  private func loadChapters(for book: Audiobook) async {
+    if !book.chapters.isEmpty {
+      chapters = book.chapters
+      return
+    }
+    guard let loaded = try? await client.chapters(itemID: book.id) else { return }
+    chapters = loaded
+    guard let index = books.firstIndex(where: { $0.id == book.id }) else { return }
+    books[index].chapters = loaded
+    if activeBook?.id == book.id { activeBook = books[index] }
+    await saveLocalState()
+  }
+
   private func applyPlaybackRecord(for book: Audiobook) {
     let record = localState.playback[book.id] ?? .init(speed: speeds[book.id] ?? 2)
     position = record.position
     duration = book.duration
     speed = record.speed
+    chapters = book.chapters
     knownPositions = record.knownPositions
     recoveryExpiresAt = record.recoveryExpiresAt
+    scheduleRecoveryExpiry()
     synchronization = record.synchronization
     hasPendingSynchronization = record.hasPendingSynchronization
     didMarkFinished = record.recentlyFinishedAt != nil
@@ -750,12 +789,27 @@ final class AppModel {
   private func beginRecoveryWindowIfNeeded() {
     guard !knownPositions.isEmpty else { return }
     recoveryExpiresAt = Date().addingTimeInterval(PlaybackLedger.recoveryLifetime)
+    scheduleRecoveryExpiry()
   }
 
   private func expireRecoveryIfNeeded() {
     guard let recoveryExpiresAt, recoveryExpiresAt <= .now else { return }
     knownPositions = []
     self.recoveryExpiresAt = nil
+    recoveryExpiryTask?.cancel()
+    recoveryExpiryTask = nil
+    Task { await saveLocalState() }
+  }
+
+  private func scheduleRecoveryExpiry() {
+    recoveryExpiryTask?.cancel()
+    guard let expiry = recoveryExpiresAt else { return }
+    let delay = max(expiry.timeIntervalSinceNow, 0)
+    recoveryExpiryTask = Task { [weak self] in
+      try? await Task.sleep(for: .milliseconds(Int64(delay * 1_000)))
+      guard !Task.isCancelled, let self, self.recoveryExpiresAt == expiry else { return }
+      self.expireRecoveryIfNeeded()
+    }
   }
 
   private func scheduleSynchronizationRetry(position: TimeInterval) {

@@ -86,8 +86,13 @@ struct ResumePanel: View {
     VStack(alignment: .leading, spacing: 8) {
       Text("Choose audiobook library").font(.headline)
       ForEach(model.libraries) { library in
-        Button(library.name) { Task { try? await model.chooseLibrary(library) } }.buttonStyle(
-          .plain)
+        Button(library.name) {
+          Task {
+            do { try await model.chooseLibrary(library) } catch {
+              model.errorMessage = "That library could not be loaded."
+            }
+          }
+        }.buttonStyle(.plain)
       }
     }
   }
