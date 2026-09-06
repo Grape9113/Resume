@@ -323,6 +323,8 @@ final class AppModel {
   }
 
   func recover(_ known: KnownPosition) {
+    synchronization.suspend(position: known.position)
+    hasPendingSynchronization = true
     seek(to: known.position)
   }
 
@@ -540,7 +542,7 @@ final class AppModel {
     else { return }
     preserve(position, source: .thisMac, comparedWith: event.progress.currentTime)
     preserve(event.progress.currentTime, source: .audiobookshelf, comparedWith: position)
-    synchronization.recordFailure(position: position)
+    synchronization.suspend(position: position)
     hasPendingSynchronization = true
     errorMessage = "Another listening position is available. Choose which one to keep."
     Task { await saveLocalState() }

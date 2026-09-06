@@ -40,6 +40,13 @@ public struct SynchronizationState: Codable, Equatable, Sendable {
   public mutating func prepareUpload(localPosition: TimeInterval, server: ServerProgress, now: Date)
     -> SynchronizationInstruction
   {
+    if isSuspended {
+      pendingPosition = localPosition
+      return .suspend([
+        .init(position: localPosition, source: .thisMac, observedAt: now),
+        .init(position: server.position, source: .audiobookshelf, observedAt: now),
+      ])
+    }
     if let serverBaseline,
       server.lastUpdate != serverBaseline,
       abs(server.position - lastSyncedPosition) >= SynchronizationPolicy.meaningfulDifference
@@ -57,6 +64,11 @@ public struct SynchronizationState: Codable, Equatable, Sendable {
 
   public mutating func recordFailure(position: TimeInterval) {
     pendingPosition = position
+  }
+
+  public mutating func suspend(position: TimeInterval) {
+    pendingPosition = position
+    isSuspended = true
   }
 
   public mutating func recordSuccess(position: TimeInterval, newServerBaseline: Int64) {

@@ -39,4 +39,23 @@ struct SynchronizationStateTests {
     #expect(state.pendingPosition == nil)
     #expect(state.serverBaseline == 201)
   }
+
+  @Test("an explicit external-progress signal holds writes even before a baseline changes")
+  func explicitSuspensionHoldsWrites() {
+    let now = Date(timeIntervalSince1970: 700)
+    var state = SynchronizationState(serverBaseline: 100, lastSyncedPosition: 1_000)
+    state.suspend(position: 1_300)
+
+    let instruction = state.prepareUpload(
+      localPosition: 1_350,
+      server: .init(position: 1_020, duration: 10_000, isFinished: false, lastUpdate: 100),
+      now: now)
+
+    #expect(
+      instruction
+        == .suspend([
+          .init(position: 1_350, source: .thisMac, observedAt: now),
+          .init(position: 1_020, source: .audiobookshelf, observedAt: now),
+        ]))
+  }
 }
