@@ -97,6 +97,7 @@ public enum LibrarySearch {
         return max(0, 1 - Double(distance) / Double(max(queryToken.count, candidateToken.count)))
       }.max() ?? 0
     }
+    guard tokenScores.allSatisfy({ $0 >= 0.5 }) else { return 0 }
     return tokenScores.reduce(0, +) / Double(tokenScores.count)
   }
 

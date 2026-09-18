@@ -5,6 +5,36 @@ import Testing
 
 @Suite("Synchronization state")
 struct SynchronizationStateTests {
+  @Test(
+    "suspended synchronization exposes recovery only for distinct positions",
+    arguments: [0.0, 29.0, 30.0])
+  func suspensionDeduplicatesNoise(difference: Double) {
+    var state = SynchronizationState(serverBaseline: 1, lastSyncedPosition: 100)
+    let instruction = state.prepareUpload(
+      localPosition: 100 + difference,
+      server: .init(position: 100, duration: 1_000, isFinished: false, lastUpdate: 2), now: .now)
+    guard case .suspend(let positions) = instruction else {
+      Issue.record("A changed baseline must suspend automatic writes")
+      return
+    }
+    #expect(positions.count == (difference >= 30 ? 2 : 0))
+  }
+
+  @Test(
+    "unknown or changed server baselines never authorize a stale pending write",
+    arguments: [Int64?.none, Int64?.some(99)])
+  func uncertainBaselineCannotUpload(baseline: Int64?) {
+    var state = SynchronizationState(serverBaseline: baseline, lastSyncedPosition: 100)
+    let instruction = state.prepareUpload(
+      localPosition: 900,
+      server: .init(position: 110, duration: 1_000, isFinished: false, lastUpdate: 100),
+      now: Date(timeIntervalSince1970: 500))
+    if case .upload = instruction {
+      Issue.record("Stale Mac state would overwrite newer server state")
+    }
+    #expect(state.isSuspended)
+  }
+
   @Test("another client advancing playback suspends automatic writes")
   func suspendsForAnotherClient() {
     let now = Date(timeIntervalSince1970: 500)

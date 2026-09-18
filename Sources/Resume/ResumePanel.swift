@@ -4,18 +4,26 @@ import SwiftUI
 
 struct ResumePanel: View {
   @Bindable var model: AppModel
-  @FocusState private var searchFocused: Bool
+  @FocusState private var panelFocused: Bool
 
   var body: some View {
-    Group {
-      switch model.mode {
-      case .connection: connection
-      case .library: library
-      case .player: player
-      case .search: search
-      case .settings: settings
-      case .chapters: chapterList
+    VStack(spacing: 10) {
+      Group {
+        switch model.mode {
+        case .connection: connection
+        case .library: library
+        case .player: player
+        case .search: search
+        case .settings: settings
+        case .chapters: chapterList
+        }
       }
+      Divider()
+      Text(buildIdentity)
+        .font(.caption2.monospacedDigit())
+        .foregroundStyle(.secondary)
+        .frame(maxWidth: .infinity, alignment: .trailing)
+        .accessibilityLabel("Running \(buildIdentity)")
     }
     .frame(width: 320)
     .padding(14)
@@ -25,6 +33,11 @@ struct ResumePanel: View {
           .rect(cornerRadius: 8)
         ).padding(8)
       }
+    }
+    .focusable()
+    .focused($panelFocused)
+    .onChange(of: model.mode) {
+      panelFocused = model.mode != .search
     }
     .onKeyPress(.space) {
       guard model.mode == .player else { return .ignored }
@@ -39,8 +52,10 @@ struct ResumePanel: View {
       }
       return .handled
     }
-    .onKeyPress(characters: .alphanumerics.union(.punctuationCharacters)) { press in
-      guard model.mode == .player, press.modifiers.isEmpty else { return .ignored }
+    .onKeyPress(characters: .alphanumerics.union(.punctuationCharacters).union(.symbols)) { press in
+      guard model.mode == .player, press.modifiers.intersection([.command, .control]).isEmpty else {
+        return .ignored
+      }
       model.beginSearch(with: String(press.characters))
       return .handled
     }
@@ -68,7 +83,9 @@ struct ResumePanel: View {
         model.mode = .player
       }
     }
-    .onAppear { NSApplication.shared.setActivationPolicy(.accessory) }
+    .onAppear {
+      if model.mode == .player { panelFocused = true }
+    }
   }
 
   private var connection: some View {
@@ -117,9 +134,10 @@ struct ResumePanel: View {
         Button {
           Task { await model.togglePlayback() }
         } label: {
-          Image(systemName: model.isPlaying ? "pause.fill" : "play.fill").font(.title2)
+          Image(systemName: (model.isPlaying || model.wantsPlayback) ? "pause.fill" : "play.fill")
+            .font(.title2)
         }
-        .accessibilityLabel(model.isPlaying ? "Pause" : "Play")
+        .accessibilityLabel((model.isPlaying || model.wantsPlayback) ? "Pause" : "Play")
         Button {
           model.skip(30)
         } label: {
@@ -164,8 +182,12 @@ struct ResumePanel: View {
 
   private var search: some View {
     VStack(spacing: 10) {
-      TextField("Search", text: $model.query).textFieldStyle(.roundedBorder).focused($searchFocused)
-        .onChange(of: model.query) { model.updateSearch() }.onSubmit { model.acceptSearch() }
+      SearchInput(
+        text: $model.query, changed: { model.updateSearch() },
+        submit: { Task { await model.acceptSearch() } }, cancel: { model.cancelSearch() },
+        settings: { model.showSettings() }, quit: { model.quit() }
+      )
+      .frame(height: 24)
       if let result = model.searchResult {
         cover(for: result)
         Text(result.title).font(.headline).lineLimit(1)
@@ -173,7 +195,7 @@ struct ResumePanel: View {
       } else {
         ContentUnavailableView("No match", systemImage: "books.vertical")
       }
-    }.onAppear { searchFocused = true }
+    }
   }
 
   private var settings: some View {
@@ -233,6 +255,24 @@ struct ResumePanel: View {
     let total = max(Int(seconds), 0)
     return String(format: "%d:%02d:%02d", total / 3600, total % 3600 / 60, total % 60)
   }
+
+  private var buildIdentity: String {
+    let version =
+      Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String
+      ?? "unknown"
+    let build =
+      Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String
+      ?? "unknown"
+    let builtAt =
+      (try? Bundle.main.executableURL?.resourceValues(
+        forKeys: [.contentModificationDateKey]
+      ).contentModificationDate) ?? nil
+    let developmentBuild =
+      builtAt.map {
+        $0.formatted(date: .abbreviated, time: .shortened)
+      } ?? "unknown time"
+    return "Resume \(version) (build \(build)) · built \(developmentBuild)"
+  }
 }
 
 private struct ArtworkImage: View {
@@ -251,5 +291,81 @@ private struct ArtworkImage: View {
     .frame(maxWidth: .infinity, maxHeight: .infinity)
     .clipShape(.rect(cornerRadius: 8))
     .task(id: book.id + (book.coverRevision ?? "")) { image = await model.artwork(for: book) }
+  }
+}
+
+private struct SearchInput: NSViewRepresentable {
+  @Binding var text: String
+  let changed: () -> Void
+  let submit: () -> Void
+  let cancel: () -> Void
+  let settings: () -> Void
+  let quit: () -> Void
+
+  func makeCoordinator() -> Coordinator { Coordinator(self) }
+  func makeNSView(context: Context) -> SearchTextField {
+    let field = SearchTextField()
+    field.placeholderString = "Search"
+    field.setAccessibilityLabel("Search")
+    field.isBezeled = true
+    field.bezelStyle = .roundedBezel
+    field.font = .systemFont(ofSize: NSFont.systemFontSize)
+    field.delegate = context.coordinator
+    return field
+  }
+  func updateNSView(_ field: SearchTextField, context: Context) {
+    context.coordinator.input = self
+    if field.stringValue != text { field.stringValue = text }
+    field.settings = settings
+    field.quit = quit
+  }
+
+  final class Coordinator: NSObject, NSTextFieldDelegate {
+    var input: SearchInput
+    init(_ input: SearchInput) { self.input = input }
+    func controlTextDidChange(_ notification: Notification) {
+      guard let field = notification.object as? NSTextField else { return }
+      input.text = field.stringValue
+      input.changed()
+    }
+    func control(_ control: NSControl, textView: NSTextView, doCommandBy command: Selector) -> Bool
+    {
+      if command == #selector(NSResponder.insertNewline(_:)) {
+        input.submit()
+        return true
+      }
+      if command == #selector(NSResponder.cancelOperation(_:)) {
+        input.cancel()
+        return true
+      }
+      return false
+    }
+  }
+}
+
+private final class SearchTextField: NSTextField {
+  var settings: (() -> Void)?
+  var quit: (() -> Void)?
+  override func viewDidMoveToWindow() {
+    super.viewDidMoveToWindow()
+    DispatchQueue.main.async { [weak self] in
+      guard let self, let window = self.window else { return }
+      window.makeFirstResponder(self)
+      if let editor = self.currentEditor() {
+        editor.selectedRange = NSRange(location: self.stringValue.utf16.count, length: 0)
+      }
+    }
+  }
+  override func performKeyEquivalent(with event: NSEvent) -> Bool {
+    let modifiers = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
+    if event.charactersIgnoringModifiers == ",", modifiers == .control {
+      settings?()
+      return true
+    }
+    if event.charactersIgnoringModifiers == "q", modifiers == .command {
+      quit?()
+      return true
+    }
+    return super.performKeyEquivalent(with: event)
   }
 }

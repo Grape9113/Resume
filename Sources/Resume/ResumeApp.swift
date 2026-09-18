@@ -1,20 +1,55 @@
-import SwiftUI
 import AppKit
+import SwiftUI
 
 @main
 struct ResumeApp: App {
-    @State private var model = AppModel()
+  @State private var model = makeModel()
+  #if DEBUG
+    @MainActor private static var testWindow: NSWindow?
+  #endif
 
-    var body: some Scene {
-        MenuBarExtra("Resume", systemImage: "books.vertical.fill") {
-            ResumePanel(model: model)
-                .onReceive(NSWorkspace.shared.notificationCenter.publisher(for: NSWorkspace.willSleepNotification)) { _ in
-                    model.systemWillSleep()
-                }
-                .onReceive(NSWorkspace.shared.notificationCenter.publisher(for: NSWorkspace.didWakeNotification)) { _ in
-                    Task { await model.systemDidWake() }
-                }
+  private static func makeModel() -> AppModel {
+    #if DEBUG
+      if ProcessInfo.processInfo.arguments.contains("--ui-testing") {
+        let model = AppModel(
+          client: TestAudiobookshelf(), player: TestPlayer(),
+          stateStore: MemoryStateStore(), vault: TestConnectionStore(), startsAutomatically: false)
+        model.books = [fixtureBook()]
+        model.activeBook = model.books.first
+        model.duration = 1_000
+        model.position = 100
+        model.chapters = [.init(id: "chapter", title: "Chapter Two", start: 500)]
+        model.mode = .player
+        DispatchQueue.main.async {
+          let window = NSWindow(
+            contentViewController: NSHostingController(rootView: ResumePanel(model: model)))
+          window.title = "Resume UI Test Panel"
+          window.setContentSize(NSSize(width: 348, height: 540))
+          window.center()
+          window.makeKeyAndOrderFront(nil)
+          NSApplication.shared.activate()
+          testWindow = window
         }
-        .menuBarExtraStyle(.window)
+        return model
+      }
+    #endif
+    return AppModel()
+  }
+
+  var body: some Scene {
+    MenuBarExtra("Resume", systemImage: "books.vertical.fill") {
+      ResumePanel(model: model)
+        .onReceive(
+          NSWorkspace.shared.notificationCenter.publisher(for: NSWorkspace.willSleepNotification)
+        ) { _ in
+          model.systemWillSleep()
+        }
+        .onReceive(
+          NSWorkspace.shared.notificationCenter.publisher(for: NSWorkspace.didWakeNotification)
+        ) { _ in
+          Task { await model.systemDidWake() }
+        }
     }
+    .menuBarExtraStyle(.window)
+  }
 }

@@ -5,6 +5,11 @@ import Testing
 
 @Suite("Library Search")
 struct LibrarySearchTests {
+  @Test("one matching word cannot hide an implausible query term")
+  func rejectsPartiallyUnrelatedQuery() {
+    #expect(LibrarySearch.bestMatch(for: "hobbit qzxv", in: books) == nil)
+  }
+
   @Test("cached audiobook metadata from before chapter caching remains readable")
   func decodesCacheWithoutChapters() throws {
     let data = Data(

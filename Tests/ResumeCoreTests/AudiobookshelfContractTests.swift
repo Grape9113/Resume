@@ -14,4 +14,16 @@ struct AudiobookshelfContractTests {
 
     #expect(tokens == AuthenticationTokens(accessToken: "access-2", refreshToken: "refresh-2"))
   }
+
+  @Test("library responses expose the server's libraries array")
+  func decodesLibrariesEnvelope() throws {
+    let fixture = Data(
+      #"{"libraries":[{"id":"library-1","name":"Audiobooks","mediaType":"book"}],"defaultLibraryId":"library-1"}"#.utf8)
+
+    let libraries = try AudiobookshelfLibrariesEnvelope.decode(fixture)
+
+    #expect(libraries == [
+      AudiobookshelfLibrary(id: "library-1", name: "Audiobooks", mediaType: "book")
+    ])
+  }
 }

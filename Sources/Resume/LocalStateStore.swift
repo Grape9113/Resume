@@ -22,7 +22,13 @@ struct LocalState: Codable, Sendable {
   }
 }
 
-actor LocalStateStore {
+protocol LocalStatePersisting: Sendable {
+  func load() async -> LocalState?
+  func save(_ state: LocalState) async throws
+  func clear() async
+}
+
+actor LocalStateStore: LocalStatePersisting {
   private let url: URL
 
   init() {

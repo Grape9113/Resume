@@ -31,24 +31,32 @@ final class AppModel {
   var recentlyFinishedAt: [String: Date] = [:]
   var speeds: [String: Double] = [:]
 
-  @ObservationIgnored private let vault = KeychainStore()
-  @ObservationIgnored private let stateStore = LocalStateStore()
-  @ObservationIgnored private let artworkStore = ArtworkStore()
+  @ObservationIgnored private let now: () -> Date
+  @ObservationIgnored private let vault: any ConnectionStoring
+  @ObservationIgnored private let stateStore: any LocalStatePersisting
+  @ObservationIgnored private let artworkStore: ArtworkStore
+  @ObservationIgnored private let preferences: UserDefaults
   @ObservationIgnored private let progressEvents = ProgressEventClient()
   @ObservationIgnored private lazy var systemMonitor = SystemMonitor(
     onNetworkAvailable: { [weak self] in Task { await self?.networkBecameAvailable() } },
     onOutputDeviceRemoved: { [weak self] in self?.outputDeviceRemoved() }
   )
-  @ObservationIgnored private lazy var client = AudiobookshelfClient(vault: vault)
-  @ObservationIgnored private lazy var player = AudioPlayer(
-    update: { [weak self] position, duration, playing in
-      Task { @MainActor in
-        await self?.receivePlayerUpdate(position: position, duration: duration, playing: playing)
-      }
-    },
-    stalled: { [weak self] in self?.playbackStalled() },
-    ended: { [weak self] in self?.playbackEnded() }
-  )
+  @ObservationIgnored private lazy var client: any AudiobookshelfServing =
+    suppliedClient ?? AudiobookshelfClient(vault: vault)
+  @ObservationIgnored private let suppliedClient: (any AudiobookshelfServing)?
+  @ObservationIgnored private let suppliedPlayer: (any PlaybackControlling)?
+  @ObservationIgnored private lazy var player: any PlaybackControlling =
+    suppliedPlayer
+    ?? AudioPlayer(
+      update: { [weak self] position, duration, playing in
+        Task { @MainActor in
+          await self?.receivePlayerUpdate(position: position, duration: duration, playing: playing)
+        }
+      },
+      stalled: { [weak self] in self?.playbackStalled() },
+      ended: { [weak self] in self?.playbackEnded() }
+    )
+  @ObservationIgnored private var playbackGeneration = UUID()
   @ObservationIgnored private var playbackSessionID: String?
   @ObservationIgnored private var lastSyncedPosition: TimeInterval = 0
   @ObservationIgnored private var didMarkFinished = false
@@ -64,9 +72,26 @@ final class AppModel {
   @ObservationIgnored private var synchronizationRetryTask: Task<Void, Never>?
   @ObservationIgnored private var recoveryExpiryTask: Task<Void, Never>?
 
-  init() {
+  init(
+    client: (any AudiobookshelfServing)? = nil,
+    player: (any PlaybackControlling)? = nil,
+    stateStore: any LocalStatePersisting = LocalStateStore(),
+    vault: any ConnectionStoring = KeychainStore(),
+    artworkStore: ArtworkStore = ArtworkStore(),
+    preferences: UserDefaults = .standard,
+    now: @escaping () -> Date = Date.init,
+    startsAutomatically: Bool = true
+  ) {
+    self.suppliedClient = client
+    self.suppliedPlayer = player
+    self.stateStore = stateStore
+    self.artworkStore = artworkStore
+    self.preferences = preferences
+    self.vault = vault
+    self.now = now
+    guard startsAutomatically else { return }
     _ = systemMonitor
-    player.configureRemoteCommands(
+    self.player.configureRemoteCommands(
       play: { [weak self] in
         guard let self, !self.isPlaying else { return }
         await self.togglePlayback()
@@ -91,7 +116,7 @@ final class AppModel {
 
   func restore() async {
     if var local = await stateStore.load() {
-      local.playback.prepareForProcessStart(now: .now)
+      local.playback.prepareForProcessStart(now: now())
       localState = local
       books = local.books
       activeBook = local.activeBookID.flatMap { id in books.first { $0.id == id } }
@@ -116,10 +141,11 @@ final class AppModel {
   }
 
   func connect() async {
-    guard let url = URL(string: server), url.scheme == "https" else {
-      errorMessage = "Enter the HTTPS address of your PikaPods server."
+    guard let url = ServerAddress.normalized(server) else {
+      errorMessage = "Enter your PikaPods server address."
       return
     }
+    server = url.absoluteString
     isBusy = true
     defer { isBusy = false }
     do {
@@ -134,15 +160,20 @@ final class AppModel {
         mode = .library
       }
       setLaunchAtLogin(true)
+    } catch AudiobookshelfClientError.invalidCredentials {
+      errorMessage = "That username or password was not accepted."
+    } catch AudiobookshelfClientError.serverUnavailable {
+      errorMessage = "Resume couldn’t reach that PikaPods server. Check the address and try again."
     } catch {
-      errorMessage = "Sign-in failed. Check the address, username, and password."
+      errorMessage =
+        "The server replied unexpectedly. Check that Audiobookshelf is running and try again."
     }
   }
 
   func chooseLibrary(_ library: ABSLibrary) async throws {
     await vault.saveSelectedLibrary(library.id)
     selectedLibraryName = library.name
-    UserDefaults.standard.set(library.name, forKey: "selectedLibraryName")
+    preferences.set(library.name, forKey: "selectedLibraryName")
     try await loadLibrary()
   }
 
@@ -154,7 +185,7 @@ final class AppModel {
       return
     }
     books = try await client.items(libraryID: libraryID)
-    selectedLibraryName = UserDefaults.standard.string(forKey: "selectedLibraryName") ?? ""
+    selectedLibraryName = preferences.string(forKey: "selectedLibraryName") ?? ""
     let latestServerBook = books.max {
       ($0.lastPlayedAt ?? .distantPast) < ($1.lastPlayedAt ?? .distantPast)
     }
@@ -195,23 +226,29 @@ final class AppModel {
     if query.isEmpty { cancelSearch() }
   }
 
-  func acceptSearch() {
+  func acceptSearch() async {
     guard let result = searchResult else { return }
-    Task { await closePlaybackSession() }
+    playbackGeneration = UUID()
+    let generation = playbackGeneration
+    wantsPlayback = false
+    isPlaying = false
+    player.pause()
+    await closePlaybackSession()
+    guard playbackGeneration == generation else { return }
+    await saveLocalState()
     player.clear()
     playbackSessionID = nil
     isPlaying = false
     wantsPlayback = false
     activeBook = result
-    localState.activeBookSelectedAt = .now
+    localState.activeBookSelectedAt = now()
     applyPlaybackRecord(for: result)
     usesRecoveredPosition = false
     cancelSearch()
-    Task {
-      await loadChapters(for: result)
-      await restoreActivePosition()
-      await saveLocalState()
-    }
+    await loadChapters(for: result)
+    guard playbackGeneration == generation else { return }
+    await restoreActivePosition()
+    await saveLocalState()
   }
 
   func cancelSearch() {
@@ -222,23 +259,41 @@ final class AppModel {
 
   func togglePlayback() async {
     guard let book = activeBook else { return }
+    let generation = playbackGeneration
     do {
-      if isPlaying {
+      if isPlaying || wantsPlayback {
+        playbackGeneration = UUID()
         wantsPlayback = false
         isPlaying = false
         player.pause()
         await closePlaybackSession()
+        await saveLocalState()
+        return
       } else if player.hasItem {
+        wantsPlayback = true
         player.play()
       } else {
+        wantsPlayback = true
         let requestedPosition = position
         let remote = try await client.progress(itemID: book.id)
+        guard playbackGeneration == generation, activeBook?.id == book.id, wantsPlayback else {
+          return
+        }
         preserve(position, source: .thisMac, comparedWith: remote.currentTime)
         synchronization.resolve(serverBaseline: remote.lastUpdate, position: remote.currentTime)
         let session = try await client.startPlayback(itemID: book.id)
+        guard playbackGeneration == generation, activeBook?.id == book.id, wantsPlayback else {
+          return
+        }
         // Audiobookshelf intentionally reports a zero session start for finished items.
         // Resume keeps the near-end server position during its five-day replay window.
-        let playbackPosition = usesRecoveredPosition ? requestedPosition : remote.currentTime
+        let keepsEnding =
+          remote.isFinished && remote.duration > 0
+          && remote.currentTime / remote.duration >= CompletionPolicy.threshold
+        let serverPosition = keepsEnding ? remote.currentTime : session.currentTime
+        let playbackPosition = min(
+          max(usesRecoveredPosition ? requestedPosition : serverPosition, 0), session.duration)
+        preserve(requestedPosition, source: .thisMac, comparedWith: playbackPosition)
         usesRecoveredPosition = false
         playbackSessionID = session.id
         chapters = session.chapters
@@ -253,6 +308,9 @@ final class AppModel {
           author: book.authors.joined(separator: ", "),
           bookDuration: session.duration
         )
+        guard playbackGeneration == generation, activeBook?.id == book.id, wantsPlayback else {
+          return
+        }
         player.play()
         lastPlaybackTickInstant = .now
         listenedSinceSync = 0
@@ -267,12 +325,13 @@ final class AppModel {
           hasPendingSynchronization = true
         }
       }
-      if !isPlaying {
-        wantsPlayback = true
-        beginRecoveryWindowIfNeeded()
+      if wantsPlayback {
+        if recoveryExpiresAt == nil { beginRecoveryWindowIfNeeded() }
         await saveLocalState()
       }
     } catch {
+      guard playbackGeneration == generation else { return }
+      wantsPlayback = false
       errorMessage = "Playback couldn’t start."
     }
   }
@@ -291,8 +350,10 @@ final class AppModel {
 
   func forceFetch() async {
     guard let book = activeBook else { return }
+    let generation = playbackGeneration
     do {
       let remote = try await client.progress(itemID: book.id)
+      guard activeBook?.id == book.id, playbackGeneration == generation else { return }
       preserve(position, source: .thisMac, comparedWith: remote.currentTime)
       player.seek(to: remote.currentTime)
       position = remote.currentTime
@@ -307,13 +368,16 @@ final class AppModel {
 
   func forcePush() async {
     guard let book = activeBook else { return }
+    let generation = playbackGeneration
     do {
       let remote = try await client.progress(itemID: book.id)
+      guard activeBook?.id == book.id, playbackGeneration == generation else { return }
       preserve(remote.currentTime, source: .audiobookshelf, comparedWith: position)
       try await client.pushProgress(
         itemID: book.id, position: position, duration: duration,
         isFinished: recentlyFinishedAt[book.id] != nil)
       let refreshed = try await client.progress(itemID: book.id)
+      guard activeBook?.id == book.id, playbackGeneration == generation else { return }
       synchronization.resolve(serverBaseline: refreshed.lastUpdate, position: refreshed.currentTime)
       hasPendingSynchronization = false
       usesRecoveredPosition = false
@@ -335,7 +399,7 @@ final class AppModel {
     knownPositions.removeAll {
       abs($0.position - candidate) < SynchronizationPolicy.meaningfulDifference
     }
-    knownPositions.append(.init(position: candidate, source: source, observedAt: .now))
+    knownPositions.append(.init(position: candidate, source: source, observedAt: now()))
     if isPlaying || recoveryExpiresAt != nil { beginRecoveryWindowIfNeeded() }
     Task { await saveLocalState() }
   }
@@ -350,7 +414,7 @@ final class AppModel {
 
   private func playbackTick() async {
     guard isPlaying, let book = activeBook else { return }
-    if let nextSynchronizationAttemptAt, nextSynchronizationAttemptAt > .now { return }
+    if let nextSynchronizationAttemptAt, nextSynchronizationAttemptAt > now() { return }
     expireRecoveryIfNeeded()
     if CompletionPolicy.shouldMarkFinished(position: position, duration: duration, isPlaying: true),
       !didMarkFinished
@@ -360,7 +424,8 @@ final class AppModel {
         let snapshot = ServerProgress(
           position: remote.currentTime, duration: remote.duration, isFinished: remote.isFinished,
           lastUpdate: remote.lastUpdate)
-        switch synchronization.prepareUpload(localPosition: position, server: snapshot, now: .now) {
+        switch synchronization.prepareUpload(localPosition: position, server: snapshot, now: now())
+        {
         case .suspend(let alternatives):
           knownPositions = alternatives
           beginRecoveryWindowIfNeeded()
@@ -394,7 +459,7 @@ final class AppModel {
       let snapshot = ServerProgress(
         position: remote.currentTime, duration: remote.duration, isFinished: remote.isFinished,
         lastUpdate: remote.lastUpdate)
-      switch synchronization.prepareUpload(localPosition: position, server: snapshot, now: .now) {
+      switch synchronization.prepareUpload(localPosition: position, server: snapshot, now: now()) {
       case .suspend(let alternatives):
         knownPositions = alternatives
         beginRecoveryWindowIfNeeded()
@@ -429,7 +494,7 @@ final class AppModel {
         position: remote.currentTime, duration: remote.duration, isFinished: remote.isFinished,
         lastUpdate: remote.lastUpdate)
       if let pending = synchronization.pendingPosition {
-        switch synchronization.prepareUpload(localPosition: pending, server: snapshot, now: .now) {
+        switch synchronization.prepareUpload(localPosition: pending, server: snapshot, now: now()) {
         case .upload:
           try await client.pushProgress(
             itemID: book.id, position: pending, duration: remote.duration,
@@ -468,7 +533,13 @@ final class AppModel {
     }
   }
 
-  func showSettings() { mode = mode == .settings ? .player : .settings }
+  func showSettings() {
+    guard mode != .connection, mode != .library else { return }
+    let leavingSettings = mode == .settings
+    query = ""
+    searchResult = nil
+    mode = leavingSettings ? .player : .settings
+  }
 
   func setLaunchAtLogin(_ enabled: Bool) {
     do {
@@ -482,9 +553,14 @@ final class AppModel {
   }
 
   func signOut() async {
+    playbackGeneration = UUID()
     wantsPlayback = false
     isPlaying = false
     player.pause()
+    player.clear()
+    playbackSessionID = nil
+    libraryRefreshTask?.cancel()
+    resetSynchronizationBackoff()
     progressEvents.disconnect()
     try? await client.logout()
     do {
@@ -495,7 +571,7 @@ final class AppModel {
     }
     await stateStore.clear()
     await artworkStore.clear()
-    UserDefaults.standard.removeObject(forKey: "selectedLibraryName")
+    preferences.removeObject(forKey: "selectedLibraryName")
     localState = LocalState()
     synchronization = .init()
     libraries = []
@@ -519,7 +595,7 @@ final class AppModel {
     mode = .connection
   }
 
-  private func receiveExternalProgress(_ event: ExternalProgressEvent) {
+  func receiveExternalProgress(_ event: ExternalProgressEvent) {
     if event.itemID != activeBook?.id, !isPlaying,
       let book = books.first(where: { $0.id == event.itemID })
     {
@@ -536,8 +612,20 @@ final class AppModel {
       Task { await saveLocalState() }
       return
     }
-    guard let book = activeBook, event.itemID == book.id, event.sessionID != playbackSessionID
-    else { return }
+    guard let book = activeBook, event.itemID == book.id else { return }
+    if let sessionID = event.sessionID, sessionID == playbackSessionID { return }
+    if let baseline = synchronization.serverBaseline, event.progress.lastUpdate <= baseline {
+      return
+    }
+    if !isPlaying && !wantsPlayback {
+      preserve(position, source: .thisMac, comparedWith: event.progress.currentTime)
+      position = min(max(event.progress.currentTime, 0), duration)
+      player.seek(to: position)
+      synchronization.resolve(serverBaseline: event.progress.lastUpdate, position: position)
+      hasPendingSynchronization = false
+      Task { await saveLocalState() }
+      return
+    }
     guard abs(event.progress.currentTime - position) >= SynchronizationPolicy.meaningfulDifference
     else { return }
     preserve(position, source: .thisMac, comparedWith: event.progress.currentTime)
@@ -558,7 +646,7 @@ final class AppModel {
 
   func isRecentlyFinished(_ book: Audiobook) -> Bool {
     guard let date = recentlyFinishedAt[book.id] else { return false }
-    return Date().timeIntervalSince(date) < CompletionPolicy.lifetime
+    return now().timeIntervalSince(date) < CompletionPolicy.lifetime
   }
 
   private func saveLocalState() async {
@@ -583,28 +671,28 @@ final class AppModel {
 
   private func reconcileFinishedBooks() async {
     let expired = recentlyFinishedAt.filter {
-      Date().timeIntervalSince($0.value) >= CompletionPolicy.lifetime
+      now().timeIntervalSince($0.value) >= CompletionPolicy.lifetime
     }
     for (bookID, finishedAt) in expired {
       guard let remote = try? await client.progress(itemID: bookID) else { continue }
       let snapshot = ServerProgress(
         position: remote.currentTime, duration: remote.duration, isFinished: remote.isFinished,
         lastUpdate: remote.lastUpdate)
-      if CompletionPolicy.shouldReset(finishedAt: finishedAt, server: snapshot, now: .now) {
+      if CompletionPolicy.shouldReset(finishedAt: finishedAt, server: snapshot, now: now()) {
         do {
           try await client.pushProgress(
             itemID: bookID, position: 0, duration: remote.duration, isFinished: false)
           let ending = KnownPosition(
-            position: remote.currentTime, source: .audiobookshelf, observedAt: .now)
+            position: remote.currentTime, source: .audiobookshelf, observedAt: now())
           localState.playback.update(bookID) { record in
             record.position = 0
             record.recentlyFinishedAt = nil
             record.knownPositions = [ending]
-            record.recoveryExpiresAt = Date().addingTimeInterval(PlaybackLedger.recoveryLifetime)
+            record.recoveryExpiresAt = now().addingTimeInterval(PlaybackLedger.recoveryLifetime)
           }
           if activeBook?.id == bookID {
             preserve(remote.currentTime, source: .audiobookshelf, comparedWith: 0)
-            recoveryExpiresAt = Date().addingTimeInterval(PlaybackLedger.recoveryLifetime)
+            recoveryExpiresAt = now().addingTimeInterval(PlaybackLedger.recoveryLifetime)
             scheduleRecoveryExpiry()
             position = 0
             player.seek(to: 0)
@@ -617,6 +705,7 @@ final class AppModel {
       } else {
         recentlyFinishedAt.removeValue(forKey: bookID)
         localState.playback.update(bookID) { $0.recentlyFinishedAt = nil }
+        if activeBook?.id == bookID { didMarkFinished = false }
       }
     }
     await saveLocalState()
@@ -632,6 +721,7 @@ final class AppModel {
   }
 
   func systemWillSleep() {
+    playbackGeneration = UUID()
     wantsPlayback = false
     isPlaying = false
     player.pause()
@@ -643,18 +733,30 @@ final class AppModel {
 
   func systemDidWake() async {
     guard !isPlaying else { return }
-    await forceFetch()
+    await reconcileFinishedBooks()
+    await restoreActivePosition()
   }
 
-  private func networkBecameAvailable() async {
-    guard activeBook != nil else { return }
+  func networkBecameAvailable() async {
+    guard let book = activeBook else { return }
+    let generation = playbackGeneration
     nextSynchronizationAttemptAt = nil
-    if hasPendingSynchronization { await restoreActivePosition() }
-    if wantsPlayback, player.hasItem { player.play() } else if !isPlaying { await forceFetch() }
+    if wantsPlayback, player.hasItem {
+      await playbackTick()
+      guard playbackGeneration == generation, activeBook?.id == book.id, wantsPlayback else {
+        return
+      }
+      player.play()
+    } else if !isPlaying {
+      await reconcileFinishedBooks()
+      guard playbackGeneration == generation, activeBook?.id == book.id else { return }
+      await restoreActivePosition()
+    }
   }
 
   private func outputDeviceRemoved() {
-    guard isPlaying else { return }
+    guard isPlaying || wantsPlayback else { return }
+    playbackGeneration = UUID()
     wantsPlayback = false
     isPlaying = false
     player.pause()
@@ -665,9 +767,10 @@ final class AppModel {
     errorMessage = "Playback is waiting for the network."
   }
 
-  private func receivePlayerUpdate(position: TimeInterval, duration: TimeInterval, playing: Bool)
+  func receivePlayerUpdate(position: TimeInterval, duration: TimeInterval, playing: Bool)
     async
   {
+    guard player.hasItem else { return }
     let now = ContinuousClock.now
     if isPlaying, let lastPlaybackTickInstant {
       let elapsed = lastPlaybackTickInstant.duration(to: now).components
@@ -720,7 +823,7 @@ final class AppModel {
       let snapshot = ServerProgress(
         position: remote.currentTime, duration: remote.duration, isFinished: remote.isFinished,
         lastUpdate: remote.lastUpdate)
-      switch synchronization.prepareUpload(localPosition: position, server: snapshot, now: .now) {
+      switch synchronization.prepareUpload(localPosition: position, server: snapshot, now: now()) {
       case .suspend(let alternatives):
         knownPositions = alternatives
         beginRecoveryWindowIfNeeded()
@@ -790,12 +893,12 @@ final class AppModel {
 
   private func beginRecoveryWindowIfNeeded() {
     guard !knownPositions.isEmpty else { return }
-    recoveryExpiresAt = Date().addingTimeInterval(PlaybackLedger.recoveryLifetime)
+    recoveryExpiresAt = now().addingTimeInterval(PlaybackLedger.recoveryLifetime)
     scheduleRecoveryExpiry()
   }
 
   private func expireRecoveryIfNeeded() {
-    guard let recoveryExpiresAt, recoveryExpiresAt <= .now else { return }
+    guard let recoveryExpiresAt, recoveryExpiresAt <= now() else { return }
     knownPositions = []
     self.recoveryExpiresAt = nil
     recoveryExpiryTask?.cancel()
@@ -806,7 +909,7 @@ final class AppModel {
   private func scheduleRecoveryExpiry() {
     recoveryExpiryTask?.cancel()
     guard let expiry = recoveryExpiresAt else { return }
-    let delay = max(expiry.timeIntervalSinceNow, 0)
+    let delay = max(expiry.timeIntervalSince(now()), 0)
     recoveryExpiryTask = Task { [weak self] in
       try? await Task.sleep(for: .milliseconds(Int64(delay * 1_000)))
       guard !Task.isCancelled, let self, self.recoveryExpiresAt == expiry else { return }
@@ -820,7 +923,7 @@ final class AppModel {
     synchronizationFailureCount += 1
     let delay = RetryBackoff.delay(
       afterFailure: synchronizationFailureCount, jitter: .random(in: -1...1))
-    nextSynchronizationAttemptAt = Date().addingTimeInterval(delay)
+    nextSynchronizationAttemptAt = now().addingTimeInterval(delay)
     synchronizationRetryTask?.cancel()
     synchronizationRetryTask = Task { [weak self] in
       try? await Task.sleep(for: .milliseconds(Int64(delay * 1_000)))

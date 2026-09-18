@@ -1,0 +1,580 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {
+	};
+	objectVersion = 77;
+	objects = {
+
+/* Begin PBXBuildFile section */
+		100000000000000000000001 /* AppModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 200000000000000000000001 /* AppModel.swift */; };
+		100000000000000000000002 /* ArtworkStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 200000000000000000000002 /* ArtworkStore.swift */; };
+		100000000000000000000003 /* AudioPlayer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 200000000000000000000003 /* AudioPlayer.swift */; };
+		100000000000000000000004 /* AudiobookshelfClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = 200000000000000000000004 /* AudiobookshelfClient.swift */; };
+		100000000000000000000005 /* AuthenticatedAssetLoader.swift in Sources */ = {isa = PBXBuildFile; fileRef = 200000000000000000000005 /* AuthenticatedAssetLoader.swift */; };
+		100000000000000000000006 /* KeychainStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 200000000000000000000006 /* KeychainStore.swift */; };
+		100000000000000000000007 /* LocalStateStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 200000000000000000000007 /* LocalStateStore.swift */; };
+		100000000000000000000008 /* ProgressEventClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = 200000000000000000000008 /* ProgressEventClient.swift */; };
+		100000000000000000000009 /* ResumeApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 200000000000000000000009 /* ResumeApp.swift */; };
+		10000000000000000000000A /* ResumePanel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 20000000000000000000000A /* ResumePanel.swift */; };
+		10000000000000000000000B /* SystemMonitor.swift in Sources */ = {isa = PBXBuildFile; fileRef = 20000000000000000000000B /* SystemMonitor.swift */; };
+		100000000000000000000011 /* AudiobookshelfContract.swift in Sources */ = {isa = PBXBuildFile; fileRef = 200000000000000000000011 /* AudiobookshelfContract.swift */; };
+		100000000000000000000012 /* Authentication.swift in Sources */ = {isa = PBXBuildFile; fileRef = 200000000000000000000012 /* Authentication.swift */; };
+		100000000000000000000013 /* LibrarySearch.swift in Sources */ = {isa = PBXBuildFile; fileRef = 200000000000000000000013 /* LibrarySearch.swift */; };
+		100000000000000000000014 /* PlaybackLedger.swift in Sources */ = {isa = PBXBuildFile; fileRef = 200000000000000000000014 /* PlaybackLedger.swift */; };
+		100000000000000000000015 /* PlaybackPolicy.swift in Sources */ = {isa = PBXBuildFile; fileRef = 200000000000000000000015 /* PlaybackPolicy.swift */; };
+		100000000000000000000016 /* ResumeApplication.swift in Sources */ = {isa = PBXBuildFile; fileRef = 200000000000000000000016 /* ResumeApplication.swift */; };
+		100000000000000000000017 /* RetryBackoff.swift in Sources */ = {isa = PBXBuildFile; fileRef = 200000000000000000000017 /* RetryBackoff.swift */; };
+		100000000000000000000018 /* SynchronizationState.swift in Sources */ = {isa = PBXBuildFile; fileRef = 200000000000000000000018 /* SynchronizationState.swift */; };
+		100000000000000000000021 /* AudiobookshelfContractTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 200000000000000000000021 /* AudiobookshelfContractTests.swift */; };
+		100000000000000000000022 /* AuthenticationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 200000000000000000000022 /* AuthenticationTests.swift */; };
+		100000000000000000000023 /* LibrarySearchTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 200000000000000000000023 /* LibrarySearchTests.swift */; };
+		100000000000000000000024 /* PlaybackLedgerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 200000000000000000000024 /* PlaybackLedgerTests.swift */; };
+		100000000000000000000025 /* PlaybackPolicyTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 200000000000000000000025 /* PlaybackPolicyTests.swift */; };
+		100000000000000000000026 /* ResumeApplicationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 200000000000000000000026 /* ResumeApplicationTests.swift */; };
+		100000000000000000000027 /* RetryBackoffTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 200000000000000000000027 /* RetryBackoffTests.swift */; };
+		100000000000000000000028 /* SynchronizationStateTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 200000000000000000000028 /* SynchronizationStateTests.swift */; };
+		100000000000000000000031 /* libResumeCore.a in Frameworks */ = {isa = PBXBuildFile; fileRef = 200000000000000000000042 /* libResumeCore.a */; };
+		100000000000000000000032 /* libResumeCore.a in Frameworks */ = {isa = PBXBuildFile; fileRef = 200000000000000000000042 /* libResumeCore.a */; };
+		100000000000000000000033 /* SocketIO in Frameworks */ = {isa = PBXBuildFile; productRef = 700000000000000000000001 /* SocketIO */; };
+		110000000000000000000001 = {isa = PBXBuildFile; fileRef = 200000000000000000000001; };
+		110000000000000000000002 = {isa = PBXBuildFile; fileRef = 200000000000000000000002; };
+		110000000000000000000003 = {isa = PBXBuildFile; fileRef = 200000000000000000000003; };
+		110000000000000000000004 = {isa = PBXBuildFile; fileRef = 200000000000000000000004; };
+		110000000000000000000005 = {isa = PBXBuildFile; fileRef = 200000000000000000000005; };
+		110000000000000000000006 = {isa = PBXBuildFile; fileRef = 200000000000000000000006; };
+		110000000000000000000007 = {isa = PBXBuildFile; fileRef = 200000000000000000000007; };
+		110000000000000000000008 = {isa = PBXBuildFile; fileRef = 200000000000000000000008; };
+		11000000000000000000000B = {isa = PBXBuildFile; fileRef = 20000000000000000000000B; };
+		110000000000000000000034 = {isa = PBXBuildFile; productRef = 700000000000000000000001; };
+D20000000000000000000001 = {isa = PBXBuildFile; fileRef = D10000000000000000000001; };
+D20000000000000000000002 = {isa = PBXBuildFile; fileRef = D10000000000000000000001; };
+D20000000000000000000003 = {isa = PBXBuildFile; fileRef = D10000000000000000000002; };
+/* End PBXBuildFile section */
+
+/* Begin PBXContainerItemProxy section */
+		300000000000000000000001 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 900000000000000000000001 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 600000000000000000000002;
+			remoteInfo = ResumeCore;
+		};
+D30000000000000000000001 = {isa = PBXContainerItemProxy; containerPortal = 900000000000000000000001; proxyType = 1; remoteGlobalIDString = 600000000000000000000001; remoteInfo = Resume; };
+/* End PBXContainerItemProxy section */
+
+/* Begin PBXFileReference section */
+		200000000000000000000001 /* AppModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppModel.swift; sourceTree = "<group>"; };
+		200000000000000000000002 /* ArtworkStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ArtworkStore.swift; sourceTree = "<group>"; };
+		200000000000000000000003 /* AudioPlayer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AudioPlayer.swift; sourceTree = "<group>"; };
+		200000000000000000000004 /* AudiobookshelfClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AudiobookshelfClient.swift; sourceTree = "<group>"; };
+		200000000000000000000005 /* AuthenticatedAssetLoader.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AuthenticatedAssetLoader.swift; sourceTree = "<group>"; };
+		200000000000000000000006 /* KeychainStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeychainStore.swift; sourceTree = "<group>"; };
+		200000000000000000000007 /* LocalStateStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LocalStateStore.swift; sourceTree = "<group>"; };
+		200000000000000000000008 /* ProgressEventClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProgressEventClient.swift; sourceTree = "<group>"; };
+		200000000000000000000009 /* ResumeApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ResumeApp.swift; sourceTree = "<group>"; };
+		20000000000000000000000A /* ResumePanel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ResumePanel.swift; sourceTree = "<group>"; };
+		20000000000000000000000B /* SystemMonitor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SystemMonitor.swift; sourceTree = "<group>"; };
+		200000000000000000000011 /* AudiobookshelfContract.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AudiobookshelfContract.swift; sourceTree = "<group>"; };
+		200000000000000000000012 /* Authentication.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Authentication.swift; sourceTree = "<group>"; };
+		200000000000000000000013 /* LibrarySearch.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LibrarySearch.swift; sourceTree = "<group>"; };
+		200000000000000000000014 /* PlaybackLedger.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlaybackLedger.swift; sourceTree = "<group>"; };
+		200000000000000000000015 /* PlaybackPolicy.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlaybackPolicy.swift; sourceTree = "<group>"; };
+		200000000000000000000016 /* ResumeApplication.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ResumeApplication.swift; sourceTree = "<group>"; };
+		200000000000000000000017 /* RetryBackoff.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RetryBackoff.swift; sourceTree = "<group>"; };
+		200000000000000000000018 /* SynchronizationState.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SynchronizationState.swift; sourceTree = "<group>"; };
+		200000000000000000000021 /* AudiobookshelfContractTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AudiobookshelfContractTests.swift; sourceTree = "<group>"; };
+		200000000000000000000022 /* AuthenticationTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AuthenticationTests.swift; sourceTree = "<group>"; };
+		200000000000000000000023 /* LibrarySearchTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LibrarySearchTests.swift; sourceTree = "<group>"; };
+		200000000000000000000024 /* PlaybackLedgerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlaybackLedgerTests.swift; sourceTree = "<group>"; };
+		200000000000000000000025 /* PlaybackPolicyTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlaybackPolicyTests.swift; sourceTree = "<group>"; };
+		200000000000000000000026 /* ResumeApplicationTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ResumeApplicationTests.swift; sourceTree = "<group>"; };
+		200000000000000000000027 /* RetryBackoffTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RetryBackoffTests.swift; sourceTree = "<group>"; };
+		200000000000000000000028 /* SynchronizationStateTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SynchronizationStateTests.swift; sourceTree = "<group>"; };
+		200000000000000000000031 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
+		200000000000000000000032 /* Resume.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = Resume.entitlements; sourceTree = "<group>"; };
+		200000000000000000000041 /* Resume.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Resume.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		200000000000000000000042 /* libResumeCore.a */ = {isa = PBXFileReference; explicitFileType = archive.ar; includeInIndex = 0; path = libResumeCore.a; sourceTree = BUILT_PRODUCTS_DIR; };
+		200000000000000000000043 /* ResumeCoreTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = ResumeCoreTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+D10000000000000000000001 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Tests/Support/ApplicationFixtures.swift; sourceTree = SOURCE_ROOT; };
+D10000000000000000000002 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Tests/ResumeUITests/ResumePanelTests.swift; sourceTree = SOURCE_ROOT; };
+D10000000000000000000003 = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; path = ResumeUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+/* End PBXFileReference section */
+
+/* Begin PBXFrameworksBuildPhase section */
+		400000000000000000000001 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				100000000000000000000031 /* libResumeCore.a in Frameworks */,
+				100000000000000000000033 /* SocketIO in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		400000000000000000000002 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		400000000000000000000003 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				110000000000000000000034,
+				100000000000000000000032 /* libResumeCore.a in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+D50000000000000000000002 = {isa = PBXFrameworksBuildPhase; buildActionMask = 2147483647; files = (); runOnlyForDeploymentPostprocessing = 0; };
+/* End PBXFrameworksBuildPhase section */
+
+/* Begin PBXGroup section */
+		500000000000000000000001 = {
+			isa = PBXGroup;
+			children = (
+				D10000000000000000000001,
+D10000000000000000000002,
+500000000000000000000002 /* Sources */,
+				500000000000000000000003 /* Tests */,
+				500000000000000000000004 /* Resources */,
+				500000000000000000000005 /* Products */,
+			);
+			sourceTree = "<group>";
+		};
+		500000000000000000000002 /* Sources */ = {
+			isa = PBXGroup;
+			children = (
+				500000000000000000000006 /* Resume */,
+				500000000000000000000007 /* ResumeCore */,
+			);
+			path = Sources;
+			sourceTree = "<group>";
+		};
+		500000000000000000000003 /* Tests */ = {
+			isa = PBXGroup;
+			children = (
+				500000000000000000000008 /* ResumeCoreTests */,
+			);
+			path = Tests;
+			sourceTree = "<group>";
+		};
+		500000000000000000000004 /* Resources */ = {
+			isa = PBXGroup;
+			children = (
+				200000000000000000000031 /* Info.plist */,
+				200000000000000000000032 /* Resume.entitlements */,
+			);
+			path = Resources;
+			sourceTree = "<group>";
+		};
+		500000000000000000000005 /* Products */ = {
+			isa = PBXGroup;
+			children = (
+				200000000000000000000041 /* Resume.app */,
+				200000000000000000000042 /* libResumeCore.a */,
+				200000000000000000000043 /* ResumeCoreTests.xctest */,
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
+		500000000000000000000006 /* Resume */ = {
+			isa = PBXGroup;
+			children = (
+				200000000000000000000001 /* AppModel.swift */,
+				200000000000000000000002 /* ArtworkStore.swift */,
+				200000000000000000000003 /* AudioPlayer.swift */,
+				200000000000000000000004 /* AudiobookshelfClient.swift */,
+				200000000000000000000005 /* AuthenticatedAssetLoader.swift */,
+				200000000000000000000006 /* KeychainStore.swift */,
+				200000000000000000000007 /* LocalStateStore.swift */,
+				200000000000000000000008 /* ProgressEventClient.swift */,
+				200000000000000000000009 /* ResumeApp.swift */,
+				20000000000000000000000A /* ResumePanel.swift */,
+				20000000000000000000000B /* SystemMonitor.swift */,
+			);
+			path = Resume;
+			sourceTree = "<group>";
+		};
+		500000000000000000000007 /* ResumeCore */ = {
+			isa = PBXGroup;
+			children = (
+				200000000000000000000011 /* AudiobookshelfContract.swift */,
+				200000000000000000000012 /* Authentication.swift */,
+				200000000000000000000013 /* LibrarySearch.swift */,
+				200000000000000000000014 /* PlaybackLedger.swift */,
+				200000000000000000000015 /* PlaybackPolicy.swift */,
+				200000000000000000000016 /* ResumeApplication.swift */,
+				200000000000000000000017 /* RetryBackoff.swift */,
+				200000000000000000000018 /* SynchronizationState.swift */,
+			);
+			path = ResumeCore;
+			sourceTree = "<group>";
+		};
+		500000000000000000000008 /* ResumeCoreTests */ = {
+			isa = PBXGroup;
+			children = (
+				200000000000000000000021 /* AudiobookshelfContractTests.swift */,
+				200000000000000000000022 /* AuthenticationTests.swift */,
+				200000000000000000000023 /* LibrarySearchTests.swift */,
+				200000000000000000000024 /* PlaybackLedgerTests.swift */,
+				200000000000000000000025 /* PlaybackPolicyTests.swift */,
+				200000000000000000000026 /* ResumeApplicationTests.swift */,
+				200000000000000000000027 /* RetryBackoffTests.swift */,
+				200000000000000000000028 /* SynchronizationStateTests.swift */,
+			);
+			path = ResumeCoreTests;
+			sourceTree = "<group>";
+		};
+/* End PBXGroup section */
+
+/* Begin PBXNativeTarget section */
+		600000000000000000000001 /* Resume */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = A00000000000000000000001 /* Build configuration list for PBXNativeTarget "Resume" */;
+			buildPhases = (
+				800000000000000000000001 /* Sources */,
+				400000000000000000000001 /* Frameworks */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				B00000000000000000000001 /* PBXTargetDependency */,
+			);
+			name = Resume;
+			packageProductDependencies = (
+				700000000000000000000001 /* SocketIO */,
+			);
+			productName = Resume;
+			productReference = 200000000000000000000041 /* Resume.app */;
+			productType = "com.apple.product-type.application";
+		};
+		600000000000000000000002 /* ResumeCore */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = A00000000000000000000002 /* Build configuration list for PBXNativeTarget "ResumeCore" */;
+			buildPhases = (
+				800000000000000000000002 /* Sources */,
+				400000000000000000000002 /* Frameworks */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = ResumeCore;
+			packageProductDependencies = (
+			);
+			productName = ResumeCore;
+			productReference = 200000000000000000000042 /* libResumeCore.a */;
+			productType = "com.apple.product-type.library.static";
+		};
+		600000000000000000000003 /* ResumeCoreTests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = A00000000000000000000003 /* Build configuration list for PBXNativeTarget "ResumeCoreTests" */;
+			buildPhases = (
+				800000000000000000000003 /* Sources */,
+				400000000000000000000003 /* Frameworks */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				B00000000000000000000002 /* PBXTargetDependency */,
+			);
+			name = ResumeCoreTests;
+			packageProductDependencies = (
+			);
+			productName = ResumeCoreTests;
+			productReference = 200000000000000000000043 /* ResumeCoreTests.xctest */;
+			productType = "com.apple.product-type.bundle.unit-test";
+		};
+D60000000000000000000001 = {isa = PBXNativeTarget; buildConfigurationList = D70000000000000000000001; buildPhases = (D50000000000000000000001,D50000000000000000000002,); buildRules = (); dependencies = (D40000000000000000000001,); name = ResumeUITests; productName = ResumeUITests; productReference = D10000000000000000000003; productType = "com.apple.product-type.bundle.ui-testing"; };
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		900000000000000000000001 /* Project object */ = {
+			isa = PBXProject;
+			attributes = {
+				BuildIndependentTargetsInParallel = 1;
+				LastSwiftUpdateCheck = 2700;
+				LastUpgradeCheck = 2700;
+				TargetAttributes = {
+					600000000000000000000001 = {
+						CreatedOnToolsVersion = 27.0;
+					};
+					600000000000000000000002 = {
+						CreatedOnToolsVersion = 27.0;
+					};
+					600000000000000000000003 = {
+						CreatedOnToolsVersion = 27.0;
+					};
+				};
+			};
+			buildConfigurationList = A00000000000000000000000 /* Build configuration list for PBXProject "Resume" */;
+			developmentRegion = en;
+			hasScannedForEncodings = 0;
+			knownRegions = (
+				en,
+				Base,
+			);
+			mainGroup = 500000000000000000000001;
+			minimizedProjectReferenceProxies = 1;
+			packageReferences = (
+				700000000000000000000003 /* XCRemoteSwiftPackageReference "socket" */,
+			);
+			preferredProjectObjectVersion = 77;
+			productRefGroup = 500000000000000000000005 /* Products */;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (
+D60000000000000000000001,
+				600000000000000000000001 /* Resume */,
+				600000000000000000000002 /* ResumeCore */,
+				600000000000000000000003 /* ResumeCoreTests */,
+			);
+		};
+/* End PBXProject section */
+
+/* Begin PBXSourcesBuildPhase section */
+		800000000000000000000001 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+D20000000000000000000001,
+				100000000000000000000001 /* AppModel.swift in Sources */,
+				100000000000000000000002 /* ArtworkStore.swift in Sources */,
+				100000000000000000000003 /* AudioPlayer.swift in Sources */,
+				100000000000000000000004 /* AudiobookshelfClient.swift in Sources */,
+				100000000000000000000005 /* AuthenticatedAssetLoader.swift in Sources */,
+				100000000000000000000006 /* KeychainStore.swift in Sources */,
+				100000000000000000000007 /* LocalStateStore.swift in Sources */,
+				100000000000000000000008 /* ProgressEventClient.swift in Sources */,
+				100000000000000000000009 /* ResumeApp.swift in Sources */,
+				10000000000000000000000A /* ResumePanel.swift in Sources */,
+				10000000000000000000000B /* SystemMonitor.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		800000000000000000000002 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				100000000000000000000011 /* AudiobookshelfContract.swift in Sources */,
+				100000000000000000000012 /* Authentication.swift in Sources */,
+				100000000000000000000013 /* LibrarySearch.swift in Sources */,
+				100000000000000000000014 /* PlaybackLedger.swift in Sources */,
+				100000000000000000000015 /* PlaybackPolicy.swift in Sources */,
+				100000000000000000000016 /* ResumeApplication.swift in Sources */,
+				100000000000000000000017 /* RetryBackoff.swift in Sources */,
+				100000000000000000000018 /* SynchronizationState.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		800000000000000000000003 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+D20000000000000000000002,
+				110000000000000000000001,
+				110000000000000000000002,
+				110000000000000000000003,
+				110000000000000000000004,
+				110000000000000000000005,
+				110000000000000000000006,
+				110000000000000000000007,
+				110000000000000000000008,
+				11000000000000000000000B,
+
+				100000000000000000000021 /* AudiobookshelfContractTests.swift in Sources */,
+				100000000000000000000022 /* AuthenticationTests.swift in Sources */,
+				100000000000000000000023 /* LibrarySearchTests.swift in Sources */,
+				100000000000000000000024 /* PlaybackLedgerTests.swift in Sources */,
+				100000000000000000000025 /* PlaybackPolicyTests.swift in Sources */,
+				100000000000000000000026 /* ResumeApplicationTests.swift in Sources */,
+				100000000000000000000027 /* RetryBackoffTests.swift in Sources */,
+				100000000000000000000028 /* SynchronizationStateTests.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+D50000000000000000000001 = {isa = PBXSourcesBuildPhase; buildActionMask = 2147483647; files = (D20000000000000000000003,); runOnlyForDeploymentPostprocessing = 0; };
+/* End PBXSourcesBuildPhase section */
+
+/* Begin PBXTargetDependency section */
+		B00000000000000000000001 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 600000000000000000000002 /* ResumeCore */;
+			targetProxy = 300000000000000000000001 /* PBXContainerItemProxy */;
+		};
+		B00000000000000000000002 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 600000000000000000000002 /* ResumeCore */;
+			targetProxy = 300000000000000000000001 /* PBXContainerItemProxy */;
+		};
+D40000000000000000000001 = {isa = PBXTargetDependency; target = 600000000000000000000001; targetProxy = D30000000000000000000001; };
+/* End PBXTargetDependency section */
+
+/* Begin XCBuildConfiguration section */
+		C00000000000000000000001 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				DEBUG_INFORMATION_FORMAT = dwarf;
+				ENABLE_TESTABILITY = YES;
+				MACOSX_DEPLOYMENT_TARGET = 15.0;
+				ONLY_ACTIVE_ARCH = YES;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG;
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+				SWIFT_VERSION = 6.0;
+			};
+			name = Debug;
+		};
+		C00000000000000000000002 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				MACOSX_DEPLOYMENT_TARGET = 15.0;
+				SWIFT_COMPILATION_MODE = wholemodule;
+				SWIFT_OPTIMIZATION_LEVEL = "-O";
+				SWIFT_VERSION = 6.0;
+			};
+			name = Release;
+		};
+		C00000000000000000000011 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_ENTITLEMENTS = Resources/Resume.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				ENABLE_HARDENED_RUNTIME = YES;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = Resources/Info.plist;
+				MARKETING_VERSION = 0.1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.grape9113.Resume;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_EMIT_LOC_STRINGS = YES;
+			};
+			name = Debug;
+		};
+		C00000000000000000000012 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_ENTITLEMENTS = Resources/Resume.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				ENABLE_HARDENED_RUNTIME = YES;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = Resources/Info.plist;
+				MARKETING_VERSION = 0.1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.grape9113.Resume;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_EMIT_LOC_STRINGS = YES;
+			};
+			name = Release;
+		};
+		C00000000000000000000021 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				DEFINES_MODULE = YES;
+				MACH_O_TYPE = staticlib;
+				PRODUCT_NAME = ResumeCore;
+				SKIP_INSTALL = YES;
+			};
+			name = Debug;
+		};
+		C00000000000000000000022 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				DEFINES_MODULE = YES;
+				MACH_O_TYPE = staticlib;
+				PRODUCT_NAME = ResumeCore;
+				SKIP_INSTALL = YES;
+			};
+			name = Release;
+		};
+		C00000000000000000000031 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "";
+				GENERATE_INFOPLIST_FILE = YES;
+				PRODUCT_BUNDLE_IDENTIFIER = com.grape9113.ResumeCoreTests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_VERSION = 6.0;
+			};
+			name = Debug;
+		};
+		C00000000000000000000032 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "";
+				GENERATE_INFOPLIST_FILE = YES;
+				PRODUCT_BUNDLE_IDENTIFIER = com.grape9113.ResumeCoreTests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_VERSION = 6.0;
+			};
+			name = Release;
+		};
+D80000000000000000000001 = {isa = XCBuildConfiguration; buildSettings = { GENERATE_INFOPLIST_FILE = YES; PRODUCT_BUNDLE_IDENTIFIER = com.grape9113.ResumeUITests; PRODUCT_NAME = "$(TARGET_NAME)"; TEST_TARGET_NAME = Resume; SWIFT_VERSION = 6.0; }; name = Debug; };
+D80000000000000000000002 = {isa = XCBuildConfiguration; buildSettings = { GENERATE_INFOPLIST_FILE = YES; PRODUCT_BUNDLE_IDENTIFIER = com.grape9113.ResumeUITests; PRODUCT_NAME = "$(TARGET_NAME)"; TEST_TARGET_NAME = Resume; SWIFT_VERSION = 6.0; }; name = Release; };
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		A00000000000000000000000 /* Build configuration list for PBXProject "Resume" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				C00000000000000000000001 /* Debug */,
+				C00000000000000000000002 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		A00000000000000000000001 /* Build configuration list for PBXNativeTarget "Resume" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				C00000000000000000000011 /* Debug */,
+				C00000000000000000000012 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		A00000000000000000000002 /* Build configuration list for PBXNativeTarget "ResumeCore" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				C00000000000000000000021 /* Debug */,
+				C00000000000000000000022 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		A00000000000000000000003 /* Build configuration list for PBXNativeTarget "ResumeCoreTests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				C00000000000000000000031 /* Debug */,
+				C00000000000000000000032 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+D70000000000000000000001 = {isa = XCConfigurationList; buildConfigurations = (D80000000000000000000001,D80000000000000000000002,); defaultConfigurationIsVisible = 0; defaultConfigurationName = Debug; };
+/* End XCConfigurationList section */
+
+/* Begin XCRemoteSwiftPackageReference section */
+		700000000000000000000003 /* XCRemoteSwiftPackageReference "socket" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/socketio/socket.io-client-swift";
+			requirement = {
+				kind = exactVersion;
+				version = 16.1.1;
+			};
+		};
+/* End XCRemoteSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		700000000000000000000001 /* SocketIO */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 700000000000000000000003 /* XCRemoteSwiftPackageReference "socket" */;
+			productName = SocketIO;
+		};
+/* End XCSwiftPackageProductDependency section */
+	};
+	rootObject = 900000000000000000000001 /* Project object */;
+}

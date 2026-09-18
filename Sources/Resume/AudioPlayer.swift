@@ -4,7 +4,29 @@ import Foundation
 import MediaPlayer
 
 @MainActor
-final class AudioPlayer {
+protocol PlaybackControlling: AnyObject {
+  var hasItem: Bool { get }
+  var rate: Float { get set }
+  func load(
+    urls: [URL],
+    fetch: @escaping @Sendable (URL, String?) async throws -> AuthenticatedMediaResponse,
+    position: TimeInterval, speed: Double, title: String, author: String, bookDuration: TimeInterval
+  ) async throws
+  func play()
+  func pause()
+  func seek(to position: TimeInterval)
+  func setArtwork(_ image: NSImage)
+  func unloadKeepingNowPlaying()
+  func clear()
+  func configureRemoteCommands(
+    play: @escaping @MainActor () async -> Void,
+    pause: @escaping @MainActor () -> Void, toggle: @escaping @MainActor () async -> Void,
+    skip: @escaping @MainActor (TimeInterval) -> Void,
+    seek: @escaping @MainActor (TimeInterval) -> Void)
+}
+
+@MainActor
+final class AudioPlayer: PlaybackControlling {
   private let player = AVPlayer()
   nonisolated(unsafe) private var observer: Any?
   nonisolated(unsafe) private var stallObserver: NSObjectProtocol?
@@ -12,11 +34,20 @@ final class AudioPlayer {
   private let update: (TimeInterval, TimeInterval, Bool) -> Void
   private let stalled: () -> Void
   private let ended: () -> Void
+  private var loadGeneration = UUID()
   private var assetLoaders: [AuthenticatedAssetLoader] = []
   var hasItem: Bool { player.currentItem != nil }
   var rate: Float {
-    get { player.rate }
-    set { if player.rate != 0 { player.rate = newValue } }
+    get { player.defaultRate }
+    set {
+      player.defaultRate = newValue
+      if player.rate != 0 { player.rate = newValue }
+      if var info = MPNowPlayingInfoCenter.default().nowPlayingInfo {
+        info[MPNowPlayingInfoPropertyDefaultPlaybackRate] = newValue
+        info[MPNowPlayingInfoPropertyPlaybackRate] = player.rate
+        MPNowPlayingInfoCenter.default().nowPlayingInfo = info
+      }
+    }
   }
 
   init(
@@ -51,6 +82,8 @@ final class AudioPlayer {
     fetch: @escaping @Sendable (URL, String?) async throws -> AuthenticatedMediaResponse,
     position: TimeInterval, speed: Double, title: String, author: String, bookDuration: TimeInterval
   ) async throws {
+    cancelLoading()
+    let generation = loadGeneration
     assetLoaders = try urls.map { try AuthenticatedAssetLoader(url: $0, fetch: fetch) }
     let assets = assetLoaders.map(\.asset)
     let item: AVPlayerItem
@@ -66,6 +99,7 @@ final class AudioPlayer {
       for asset in assets {
         let tracks = try await asset.loadTracks(withMediaType: .audio)
         let assetDuration = try await asset.load(.duration)
+        guard generation == loadGeneration else { throw CancellationError() }
         guard let track = tracks.first else { continue }
         try compositionTrack.insertTimeRange(
           .init(start: .zero, duration: assetDuration), of: track, at: cursor)
@@ -73,6 +107,7 @@ final class AudioPlayer {
       }
       item = AVPlayerItem(asset: composition)
     }
+    guard generation == loadGeneration else { throw CancellationError() }
     player.replaceCurrentItem(with: item)
     if let stallObserver { NotificationCenter.default.removeObserver(stallObserver) }
     if let endObserver { NotificationCenter.default.removeObserver(endObserver) }
@@ -87,6 +122,7 @@ final class AudioPlayer {
       Task { @MainActor in self?.ended() }
     }
     await player.seek(to: CMTime(seconds: position, preferredTimescale: 600))
+    guard generation == loadGeneration else { throw CancellationError() }
     player.defaultRate = Float(speed)
     MPNowPlayingInfoCenter.default().nowPlayingInfo = [
       MPMediaItemPropertyTitle: title,
@@ -115,21 +151,34 @@ final class AudioPlayer {
   }
   func setArtwork(_ image: NSImage) {
     guard var info = MPNowPlayingInfoCenter.default().nowPlayingInfo else { return }
-    info[MPMediaItemPropertyArtwork] = MPMediaItemArtwork(boundsSize: image.size) { _ in image }
+    guard let pixels = image.cgImage(forProposedRect: nil, context: nil, hints: nil) else { return }
+    info[MPMediaItemPropertyArtwork] = Self.makeArtwork(pixels: pixels, size: image.size)
     MPNowPlayingInfoCenter.default().nowPlayingInfo = info
   }
+  // MediaPlayer invokes this synchronous callback on its own queue. Capture immutable
+  // pixels and create a fresh image there; never inherit MainActor or dispatch back to it.
+  nonisolated private static func makeArtwork(pixels: CGImage, size: CGSize) -> MPMediaItemArtwork {
+    MPMediaItemArtwork(boundsSize: size) { _ in NSImage(cgImage: pixels, size: size) }
+  }
+
   func unloadKeepingNowPlaying() {
     player.pause()
     player.replaceCurrentItem(with: nil)
-    assetLoaders = []
+    cancelLoading()
     MPNowPlayingInfoCenter.default().playbackState = .paused
   }
   func clear() {
     player.pause()
     player.replaceCurrentItem(with: nil)
-    assetLoaders = []
+    cancelLoading()
     MPNowPlayingInfoCenter.default().nowPlayingInfo = nil
     MPNowPlayingInfoCenter.default().playbackState = .stopped
+  }
+
+  private func cancelLoading() {
+    loadGeneration = UUID()
+    for loader in assetLoaders { loader.cancel() }
+    assetLoaders = []
   }
 
   func configureRemoteCommands(

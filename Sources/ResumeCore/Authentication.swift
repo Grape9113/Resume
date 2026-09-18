@@ -1,5 +1,36 @@
 import Foundation
 
+public enum ServerAddress {
+    public static func normalized(_ input: String) -> URL? {
+        let trimmed = input.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return nil }
+
+        let address: String
+        if trimmed.range(of: "://") == nil {
+            address = "https://" + trimmed
+        } else {
+            address = trimmed
+        }
+
+        guard var components = URLComponents(string: address),
+              components.scheme == "https",
+              var host = components.host,
+              !host.isEmpty,
+              components.user == nil,
+              components.password == nil,
+              components.query == nil,
+              components.fragment == nil
+        else { return nil }
+
+        if host.hasPrefix("www."), host.hasSuffix(".pikapod.net") {
+            host.removeFirst(4)
+            components.host = host
+        }
+        if components.path == "/" { components.path = "" }
+        return components.url
+    }
+}
+
 public struct AuthenticationTokens: Codable, Equatable, Sendable {
     public let accessToken: String
     public let refreshToken: String

@@ -1,11 +1,7 @@
 import Foundation
 import ResumeCore
 
-struct ABSLibrary: Codable, Identifiable, Sendable {
-  let id: String
-  let name: String
-  let mediaType: String
-}
+typealias ABSLibrary = AudiobookshelfLibrary
 
 struct PlaybackSession: Sendable {
   let id: String
@@ -24,6 +20,8 @@ struct ABSProgress: Decodable, Sendable {
 
 enum AudiobookshelfClientError: Error {
   case authenticationRequired
+  case invalidCredentials
+  case serverUnavailable
 }
 
 struct AuthenticatedMediaResponse: @unchecked Sendable {
@@ -35,12 +33,33 @@ struct AuthenticatedMediaResponse: @unchecked Sendable {
   let acceptsRanges: Bool
 }
 
-actor AudiobookshelfClient {
-  private let vault: KeychainStore
+protocol AudiobookshelfServing: Sendable {
+  func login(server: URL, username: String, password: String) async throws
+  func accessToken() async -> String?
+  func libraries() async throws -> [ABSLibrary]
+  func items(libraryID: String) async throws -> [Audiobook]
+  func startPlayback(itemID: String) async throws -> PlaybackSession
+  func chapters(itemID: String) async throws -> [Chapter]
+  func progress(itemID: String) async throws -> ABSProgress
+  func coverData(itemID: String) async throws -> Data
+  func mediaData(url: URL, range: String?) async throws -> AuthenticatedMediaResponse
+  func pushProgress(
+    itemID: String, position: TimeInterval, duration: TimeInterval, isFinished: Bool) async throws
+  func sync(
+    sessionID: String, position: TimeInterval, duration: TimeInterval, timeListened: TimeInterval)
+    async throws
+  func close(
+    sessionID: String, position: TimeInterval, duration: TimeInterval, timeListened: TimeInterval)
+    async throws
+  func logout() async throws
+}
+
+actor AudiobookshelfClient: AudiobookshelfServing {
+  private let vault: any ConnectionStoring
   private let session: URLSession
   private var sessionRecoveryTask: Task<AuthenticationTokens, Error>?
 
-  init(vault: KeychainStore, session: URLSession = .shared) {
+  init(vault: any ConnectionStoring, session: URLSession = .shared) {
     self.vault = vault
     self.session = session
   }
@@ -51,16 +70,23 @@ actor AudiobookshelfClient {
     request.setValue("application/json", forHTTPHeaderField: "Content-Type")
     request.setValue("true", forHTTPHeaderField: "x-return-tokens")
     request.httpBody = try JSONEncoder().encode(["username": username, "password": password])
-    let data = try await sendData(request)
-    let tokens = try AudiobookshelfTokenEnvelope.decode(data)
-    try await vault.save(
-      connection: .init(server: server, username: username, password: password), tokens: tokens)
+    do {
+      let data = try await sendData(request)
+      let tokens = try AudiobookshelfTokenEnvelope.decode(data)
+      try await vault.save(
+        connection: .init(server: server, username: username, password: password), tokens: tokens)
+    } catch APIError.unauthorized {
+      throw AudiobookshelfClientError.invalidCredentials
+    } catch is URLError {
+      throw AudiobookshelfClientError.serverUnavailable
+    }
   }
 
   func accessToken() async -> String? { try? await vault.loadTokens()?.accessToken }
 
   func libraries() async throws -> [ABSLibrary] {
-    try await authorized(path: "api/libraries")
+    let data = try await authorizedData(path: "api/libraries")
+    return try AudiobookshelfLibrariesEnvelope.decode(data)
   }
 
   func items(libraryID: String) async throws -> [Audiobook] {
@@ -145,7 +171,7 @@ actor AudiobookshelfClient {
       let token = try await vault.loadTokens()?.accessToken,
       url.scheme == connection.server.scheme,
       url.host == connection.server.host
-    else { throw AuthenticationError.missingCredentials }
+    else { throw AudiobookshelfClientError.authenticationRequired }
     func request(_ accessToken: String) -> URLRequest {
       var request = URLRequest(url: url)
       request.setValue("Bearer \(accessToken)", forHTTPHeaderField: "Authorization")
@@ -153,7 +179,7 @@ actor AudiobookshelfClient {
       return request
     }
     do { return try await sendMedia(request(token)) } catch APIError.unauthorized {
-      let replacement = try await recoverSession(connection: connection)
+      let replacement = try await recoverSession(connection: connection, rejectedAccessToken: token)
       return try await sendMedia(request(replacement.accessToken))
     }
   }
@@ -200,7 +226,7 @@ actor AudiobookshelfClient {
   {
     guard let connection = try await vault.loadConnection(),
       let token = try await vault.loadTokens()?.accessToken
-    else { throw AuthenticationError.missingCredentials }
+    else { throw AudiobookshelfClientError.authenticationRequired }
     guard let url = URL(string: path, relativeTo: connection.server)?.absoluteURL else {
       throw URLError(.badURL)
     }
@@ -213,7 +239,7 @@ actor AudiobookshelfClient {
       return request
     }
     do { return try await send(request(with: token)) } catch APIError.unauthorized {
-      let replacement = try await recoverSession(connection: connection)
+      let replacement = try await recoverSession(connection: connection, rejectedAccessToken: token)
       return try await send(request(with: replacement.accessToken))
     }
   }
@@ -222,19 +248,26 @@ actor AudiobookshelfClient {
     guard let connection = try await vault.loadConnection(),
       let token = try await vault.loadTokens()?.accessToken,
       let url = URL(string: path, relativeTo: connection.server)?.absoluteURL
-    else { throw AuthenticationError.missingCredentials }
+    else { throw AudiobookshelfClientError.authenticationRequired }
     func request(_ accessToken: String) -> URLRequest {
       var request = URLRequest(url: url)
       request.setValue("Bearer \(accessToken)", forHTTPHeaderField: "Authorization")
       return request
     }
     do { return try await sendData(request(token)) } catch APIError.unauthorized {
-      let replacement = try await recoverSession(connection: connection)
+      let replacement = try await recoverSession(connection: connection, rejectedAccessToken: token)
       return try await sendData(request(replacement.accessToken))
     }
   }
 
-  private func recoverSession(connection: StoredCredentials) async throws -> AuthenticationTokens {
+  private func recoverSession(connection: StoredCredentials, rejectedAccessToken: String)
+    async throws -> AuthenticationTokens
+  {
+    if let sessionRecoveryTask { return try await sessionRecoveryTask.value }
+    if let current = try await vault.loadTokens(), current.accessToken != rejectedAccessToken {
+      return current
+    }
+    // Reading the vault suspends this actor; another request may have started recovery.
     if let sessionRecoveryTask { return try await sessionRecoveryTask.value }
     let task = Task { try await self.performSessionRecovery(connection: connection) }
     sessionRecoveryTask = task

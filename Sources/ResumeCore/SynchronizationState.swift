@@ -40,23 +40,17 @@ public struct SynchronizationState: Codable, Equatable, Sendable {
   public mutating func prepareUpload(localPosition: TimeInterval, server: ServerProgress, now: Date)
     -> SynchronizationInstruction
   {
-    if isSuspended {
-      pendingPosition = localPosition
-      return .suspend([
-        .init(position: localPosition, source: .thisMac, observedAt: now),
-        .init(position: server.position, source: .audiobookshelf, observedAt: now),
-      ])
-    }
-    if let serverBaseline,
-      server.lastUpdate != serverBaseline,
-      abs(server.position - lastSyncedPosition) >= SynchronizationPolicy.meaningfulDifference
-    {
+    if isSuspended || serverBaseline != server.lastUpdate {
       isSuspended = true
       pendingPosition = localPosition
-      return .suspend([
-        .init(position: localPosition, source: .thisMac, observedAt: now),
-        .init(position: server.position, source: .audiobookshelf, observedAt: now),
-      ])
+      let distinct =
+        abs(localPosition - server.position) >= SynchronizationPolicy.meaningfulDifference
+      return .suspend(
+        distinct
+          ? [
+            .init(position: localPosition, source: .thisMac, observedAt: now),
+            .init(position: server.position, source: .audiobookshelf, observedAt: now),
+          ] : [])
     }
     pendingPosition = localPosition
     return .upload
