@@ -11,3 +11,5 @@ The skills speak in terms of five canonical triage roles. This file maps those r
 | `wontfix`                  | `wontfix`            | Will not be actioned                     |
 
 When a skill mentions a canonical role, use its corresponding tracker label.
+
+Category roles use the installed skill's literal labels: `bug` for broken existing behavior and `enhancement` for an improvement. A triaged issue has one category and one state. Manual environment acceptance can be `ready-for-human`; an unresolved product decision is `needs-info`, not silently agent-ready. A completed baseline/specification record is closed reference material, not an open execution ticket.

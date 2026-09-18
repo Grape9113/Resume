@@ -1,6 +1,6 @@
 # Testing Resume
 
-The acceptance source is [GitHub issue #1](https://github.com/Grape9113/Resume/issues/1).
+The acceptance source is the [current specification](specification.md). The [baseline register](baseline.md) distinguishes intended behavior from known discrepancies and links the remaining work. Historical issue #1 is not a new build plan.
 
 Run the complete automated suite through the Xcode project:
 
@@ -47,7 +47,7 @@ Passing this suite does not establish complete product acceptance. The following
 - Actual sleep/wake, network loss, output-device removal, Control Center/media keys, Launch at Login, VoiceOver, Full Keyboard Access, and text composition with the user's keyboard/input method.
 - Idle resource use and cache/network behavior with a representative library.
 
-No production credentials or server progress are needed by the automated tests. Do not infer that every story in issue #1 is covered merely because the suite passes.
+No production credentials or server progress are needed by the automated tests. Do not infer that every current specification story is covered merely because the suite passes.
 
 ## Verified run: 2026-09-17
 
@@ -69,3 +69,11 @@ These tests do not establish startup timing against a live account, every media 
 On macOS 27 with Xcode 27.0, all 56 core test functions passed with three repetitions (`-only-testing:ResumeCoreTests -test-iterations 3`), including both real-playback cases. The Release build passed and `git diff --check` was clean.
 
 After the user dismissed the blocking macOS security dialog, the isolated UI suite passed all four tests with zero failures in 32 seconds (`-only-testing:ResumeUITests`). All 60 test functions are therefore green for this revision: 56 core tests and 4 UI tests. The core and UI suites were run separately; live-account playback latency remains unverified.
+
+## Operating the verification loop
+
+Use the same project and scheme as the application. Run Xcode test invocations serially, including core/UI subsets; overlapping runners can interfere with desktop focus and results. Use Xcode Stop for a debugger-stopped Resume before running UI tests. If a macOS security dialog owns keyboard focus, stop keyboard automation and let the user handle the dialog; the isolated UI host requires no account credentials or Keychain grant.
+
+For a suspected media problem, measure through the real native adapter with controlled media and transport before inferring performance from the simulated player. For a state transition, start at `AppModel`. Older `ResumeApplication`, `Authenticator` and `SynchronizationPolicy.reconcile` helper tests are narrower policy evidence. Preserve the distinction when reporting coverage.
+
+The fixture's one-second preparation, byte-transfer budget, 10 ms response latency, 256 KiB request cap and image-size assertion are local regression/implementation choices. They are not a universal latency SLA, media-format acceptance matrix or immutable product dimensions. Documentation-only reconciliation does not require replaying credentialed or hardware tests; verify unchanged production/test/build files and audit claims against the dated evidence instead.

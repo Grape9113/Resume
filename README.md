@@ -11,7 +11,14 @@ A compact native macOS menu-bar audiobook client for Audiobookshelf.
 
 Xcode automatically stops any running copy of Resume before it launches the new build. Use only this Xcode project to build and run the app.
 
-The product specification is [GitHub issue #1](https://github.com/Grape9113/Resume/issues/1). Domain language is defined in `CONTEXT.md`.
+The [current specification](docs/specification.md) describes the intended existing product. Start with the [baseline and remaining discrepancies](docs/baseline.md) before changing behavior; [issue #1](https://github.com/Grape9113/Resume/issues/1) is historical completed work.
+
+## Project knowledge
+
+- [Domain glossary](CONTEXT.md): product language.
+- [Architecture and decisions](docs/architecture.md): actual state owners, integration seams and constraints.
+- [Development workflow](docs/workflow.md): artifact authority and the `to-tickets → implement → code-review` loop.
+- [Retrospective](docs/retrospectives/2026-09-18-workflow-recovery.md): lessons from implementation and workflow recovery.
 
 ## Tests
 

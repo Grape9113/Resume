@@ -37,3 +37,7 @@ Used by `/wayfinder`. The map is one issue with child issues as tickets.
 - **Frontier**: choose the first open, unassigned child with no open blocker.
 - **Claim**: assign the issue to the authenticated user.
 - **Resolve**: comment with the answer, close the child, and append its context pointer to the map.
+
+## Current baseline and execution
+
+Reach the authoritative current spec through `docs/specification.md`; its closed baseline issue is a reference for an existing product. Open follow-up issues own remaining execution. Historical issue #1 and its dated progress comments are completed history, not a backlog to recreate. Keep ticket state in GitHub rather than maintaining a competing local task list. Use `docs/baseline.md` for the evidence behind the initial follow-ups.

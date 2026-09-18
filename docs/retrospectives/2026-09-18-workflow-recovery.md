@@ -1,0 +1,18 @@
+# Retrospective: implementation drift and baseline recovery
+
+The installed `retro` skill asks for improvements to the agent's environment, grounded in the session, rather than a feature wishlist. Sources are this session's spec-test and playback-debugging work, the closed original issue and comments, the seven ordinary project commits, the starting working-tree diff and [dated verification notes](../testing.md). This record does not invent lessons from inaccessible earlier conversations.
+
+## Candidates, in severity order
+
+1. **Test the shipped path.** Older helper-model tests could pass while the real application or AVFoundation adapter failed. The prior session reproduced whole-resource buffering and an artwork callback assertion only after reaching the native path. Existing adapter/model regressions are already implemented; this recovery adds navigation identifying the actual production seam in architecture/testing guidance. Further checks should follow concrete risks, not create a second model or duplicate every helper test.
+2. **Separate intended policy from observed accidents.** A completed issue and a clean earlier review were treated too easily as complete acceptance. The new specification and reconciliation register distinguish accepted evolution, fixes, details, stale claims and unresolved behavior; open work is not hidden behind an aggregate test count. Proposed future practice: each intentional behavior change identifies its spec amendment and updates affected durable docs during the same work.
+3. **Keep verification claims scoped.** The real-player fixtures cover controlled silent media, and the UI host avoids real menu-bar placement and account access. Testing notes now make these limits discoverable. Proposed additional automation must exercise an uncovered production contract; a full native/disposable-server acceptance record remains distinct from synthetic success.
+4. **Avoid desktop test interference.** Overlapping test runs, debugger-stopped instances and a security dialog caused misleading UI failures and focus loss. The testing guide records serial execution, Xcode Stop and the credential-free isolated host. The agent must let the user handle a system authorization prompt when its tools prohibit access; the tests do not justify granting credentials.
+5. **Keep durable guidance navigable.** Product policy had accumulated in the glossary while architectural facts and verification limits were scattered across source and chat. This recovery keeps `AGENTS.md` to pointers, the glossary to terms, architecture to actual relationships, and ADRs to previously accepted consequential trade-offs. Installed skills are preserved, not rewritten to hide workflow requirements.
+6. **Checkpoint deliberately.** Substantial product/build/test changes were present outside git history. A source snapshot lets this audit distinguish product evidence from documentation changes. The subsequent user-authorized checkpoint preserves the pre-existing application state in `d1f721a` and records the documentation in a separate following commit. Future branches must include both.
+
+## What was enacted and what remains a recommendation
+
+Navigation, artifact authority, glossary separation, decision records, evidence limits and a reconciled ticket frontier are enacted by this documentation task. The already-added production-path regressions are historical completed work, not new retrospective deliverables. No lint system, CI pipeline, generic abstraction, repository-wide coding-rule set or refactor was added. Those would require their own demonstrated need and scope.
+
+The installed `implement` loop remains the mechanism for future ticket execution, testing, review and commit. This recovery stops before it.
