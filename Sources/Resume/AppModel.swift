@@ -5,7 +5,7 @@ import ServiceManagement
 
 @MainActor @Observable
 final class AppModel {
-  enum Mode { case connection, library, player, search, settings, chapters }
+  enum Mode { case connection, library, player, search, chapters }
 
   var mode: Mode = .connection
   var server = ""
@@ -25,6 +25,9 @@ final class AppModel {
   var speed = 2.0
   var chapters: [Chapter] = []
   var knownPositions: [KnownPosition] = []
+  var needsPositionRecovery: Bool { synchronization.isSuspended && !knownPositions.isEmpty }
+  private(set) var isResolvingPosition = false
+  private(set) var recoveryError: String?
   var errorMessage: String?
   var hasPendingSynchronization = false
   var isBusy = false
@@ -66,7 +69,7 @@ final class AppModel {
   @ObservationIgnored private var lastSyncedPosition: TimeInterval = 0
   @ObservationIgnored private var didMarkFinished = false
   @ObservationIgnored private var localState = LocalState()
-  @ObservationIgnored private var synchronization = SynchronizationState()
+  private var synchronization = SynchronizationState()
   @ObservationIgnored private var recoveryExpiresAt: Date?
   @ObservationIgnored private var usesRecoveredPosition = false
   @ObservationIgnored private var libraryRefreshTask: Task<Void, Never>?
@@ -300,7 +303,14 @@ final class AppModel {
           return
         }
         preserve(position, source: .thisMac, comparedWith: remote.currentTime)
-        synchronization.resolve(serverBaseline: remote.lastUpdate, position: remote.currentTime)
+        if usesRecoveredPosition, synchronization.serverBaseline != remote.lastUpdate {
+          synchronization.suspend(position: requestedPosition)
+          preserve(remote.currentTime, source: .audiobookshelf, comparedWith: requestedPosition)
+          hasPendingSynchronization = true
+        }
+        if !synchronization.isSuspended {
+          synchronization.resolve(serverBaseline: remote.lastUpdate, position: remote.currentTime)
+        }
         let session = try await client.startPlayback(itemID: book.id)
         guard playbackGeneration == generation, activeBook?.id == book.id, wantsPlayback else {
           try? await client.close(
@@ -377,31 +387,52 @@ final class AppModel {
     Task { await saveLocalState() }
   }
 
-  func forceFetch() async {
-    guard let book = activeBook else { return }
-    errorMessage = nil
+  func recover(_ known: KnownPosition) async {
+    expireRecoveryIfNeeded()
+    guard !isResolvingPosition, !isPreparingPlayback, let book = activeBook,
+      knownPositions.contains(where: { $0.id == known.id })
+    else { return }
     let generation = playbackGeneration
+    let presentedServerPosition =
+      knownPositions.last { $0.source == .audiobookshelf }?.position
+      ?? synchronization.lastSyncedPosition
+    isResolvingPosition = true
+    recoveryError = nil
+    defer { isResolvingPosition = false }
+    if let progressSynchronizationTask { await progressSynchronizationTask.value }
+    if let sessionCloseTask { await sessionCloseTask.value }
     do {
       let remote = try await client.progress(itemID: book.id)
-      guard activeBook?.id == book.id, playbackGeneration == generation else { return }
-      preserve(position, source: .thisMac, comparedWith: remote.currentTime)
-      player.seek(to: remote.currentTime)
-      position = remote.currentTime
+      guard activeBook?.id == book.id, playbackGeneration == generation,
+        knownPositions.contains(where: { $0.id == known.id })
+      else { return }
+      if abs(remote.currentTime - presentedServerPosition)
+        >= SynchronizationPolicy.meaningfulDifference
+      {
+        synchronization.suspend(position: known.position)
+        knownPositions = [
+          .init(position: known.position, source: known.source, observedAt: now()),
+          .init(position: remote.currentTime, source: .audiobookshelf, observedAt: now()),
+        ]
+        hasPendingSynchronization = true
+        await saveLocalState()
+        return
+      }
+      preserve(position, source: .thisMac, comparedWith: known.position)
       duration = remote.duration > 0 ? remote.duration : book.duration
       synchronization.resolve(serverBaseline: remote.lastUpdate, position: remote.currentTime)
-      usesRecoveredPosition = false
-      hasPendingSynchronization = false
+      seek(to: known.position)
+      hasPendingSynchronization =
+        abs(position - remote.currentTime) >= SynchronizationPolicy.meaningfulDifference
+      if hasPendingSynchronization { synchronization.recordFailure(position: position) }
       resetSynchronizationBackoff()
       await saveLocalState()
     } catch {
-      if !presentAuthenticationFailure(error) { errorMessage = "Force Fetch failed. Try again." }
+      guard activeBook?.id == book.id, playbackGeneration == generation else { return }
+      if !presentAuthenticationFailure(error) {
+        recoveryError = "Couldn’t check the server position. Try your choice again."
+      }
     }
-  }
-
-  func recover(_ known: KnownPosition) {
-    synchronization.suspend(position: known.position)
-    hasPendingSynchronization = true
-    seek(to: known.position)
   }
 
   private func preserve(
@@ -451,7 +482,7 @@ final class AppModel {
           knownPositions = alternatives
           beginRecoveryWindowIfNeeded()
           hasPendingSynchronization = true
-          // The synchronization menu exposes actionable position alternatives.
+          // The player exposes choices only while a material conflict remains unresolved.
           await saveLocalState()
           return
         case .upload:
@@ -487,7 +518,7 @@ final class AppModel {
         knownPositions = alternatives
         beginRecoveryWindowIfNeeded()
         hasPendingSynchronization = true
-        // The synchronization menu exposes actionable position alternatives.
+        // The player exposes choices only while a material conflict remains unresolved.
         await saveLocalState()
         return
       case .upload:
@@ -558,12 +589,10 @@ final class AppModel {
     }
   }
 
-  func showSettings() {
-    guard mode != .connection, mode != .library else { return }
-    let leavingSettings = mode == .settings
+  func prepareForSettings() {
     query = ""
     searchResult = nil
-    mode = leavingSettings ? .player : .settings
+    if mode == .search { mode = .player }
   }
 
   func setLaunchAtLogin(_ enabled: Bool) {
@@ -657,7 +686,7 @@ final class AppModel {
     preserve(event.progress.currentTime, source: .audiobookshelf, comparedWith: position)
     synchronization.suspend(position: position)
     hasPendingSynchronization = true
-    // The synchronization menu exposes actionable position alternatives.
+    // The player exposes choices only while a material conflict remains unresolved.
     Task { await saveLocalState() }
   }
 

@@ -203,7 +203,7 @@ struct AppModelTests {
     model.activeBook = fixtureBook()
     model.position = 300
     model.duration = 1_000
-    await model.forceFetch()
+    await model.networkBecameAvailable()
     await model.togglePlayback()
     await model.togglePlayback()
     clock.now = clock.now.addingTimeInterval(1_800)
@@ -298,8 +298,8 @@ struct AppModelTests {
     #expect(player.playing == playing)
   }
 
-  @Test("Force Fetch adopts the server and recovery preserves a local choice without autoplay")
-  func explicitAuthorityCommands() async {
+  @Test("choosing a conflict position resolves ambiguity without autoplay or a forced write")
+  func recoveryResolvesConflict() async {
     let server = TestAudiobookshelf()
     let player = TestPlayer()
     let model = AppModel(
@@ -308,16 +308,41 @@ struct AppModelTests {
     model.activeBook = fixtureBook()
     model.position = 300
     model.duration = 1_000
-    await model.forceFetch()
-    #expect(model.position == 100)
-    #expect(model.knownPositions.contains { $0.position == 300 })
-    #expect(await server.writes.isEmpty)
-    model.recover(.init(position: 300, source: .thisMac, observedAt: .now))
-    #expect(await server.writes.isEmpty)
-    #expect(!player.playing)
+    model.wantsPlayback = true
+    model.receiveExternalProgress(
+      .init(
+        itemID: "book", sessionID: nil,
+        progress: .init(currentTime: 100, duration: 1_000, isFinished: false, lastUpdate: 1)))
+    model.wantsPlayback = false
+    let choice = model.knownPositions.first { $0.source == .thisMac }!
+    #expect(model.needsPositionRecovery)
+    await model.recover(choice)
+    #expect(!model.needsPositionRecovery)
     #expect(model.position == 300)
-    #expect(await server.remote.currentTime == 100)
     #expect(!player.playing)
+    #expect(await server.writes.isEmpty)
+    // Automatic reconciliation can now write the chosen position, rather than re-suspend.
+    await model.networkBecameAvailable()
+    #expect(await server.remote.currentTime == 300)
+    #expect(!model.hasPendingSynchronization)
+  }
+
+  @Test("starting after recovery does not authorize overwriting newly moved server progress")
+  func recoveredChoiceChecksServerAgainAtStart() async {
+    let server = TestAudiobookshelf()
+    let model = AppModel(
+      client: server, player: TestPlayer(),
+      stateStore: MemoryStateStore(), startsAutomatically: false)
+    model.activeBook = fixtureBook()
+    model.duration = 1_000
+    model.position = 300
+    await model.networkBecameAvailable()
+    await model.recover(model.knownPositions.first { $0.position == 300 }!)
+    await server.setRemote(position: 500, baseline: 2)
+    await model.togglePlayback()
+    await model.togglePlayback()
+    #expect(await server.writes.isEmpty)
+    #expect(model.knownPositions.contains { $0.position == 300 })
   }
 
   @Test("a replay protected from an expired reset can become Recently finished again")
@@ -364,24 +389,58 @@ struct AppModelTests {
     #expect(!model.wantsPlayback)
   }
 
-  @Test("a delayed Force Fetch response cannot change a newly selected book")
-  func staleFetchDoesNotChangeNewBook() async {
+  @Test("a delayed recovery response cannot change a newly selected book")
+  func staleRecoveryDoesNotChangeNewBook() async {
     let server = TestAudiobookshelf()
     let model = AppModel(
       client: server, player: TestPlayer(),
       stateStore: MemoryStateStore(), startsAutomatically: false)
     model.activeBook = fixtureBook("first")
+    let choice = KnownPosition(position: 200, source: .thisMac, observedAt: .now)
+    model.knownPositions = [choice]
     await server.delayNextProgress()
-    let fetch = Task { await model.forceFetch() }
+    let recovery = Task { await model.recover(choice) }
     await server.waitUntilProgressRequested()
     await server.setRemote(position: 300)
     model.books = [fixtureBook("second")]
     model.beginSearch(with: "ranger")
     await model.acceptSearch()
     await server.releaseProgress()
-    await fetch.value
+    await recovery.value
     #expect(model.activeBook?.id == "second")
     #expect(model.position == 300)
+  }
+
+  @Test("a moved server position refreshes recovery choices before accepting an older choice")
+  func recoveryChecksLatestServer() async {
+    let server = TestAudiobookshelf()
+    let player = TestPlayer()
+    let model = AppModel(
+      client: server, player: player,
+      stateStore: MemoryStateStore(), startsAutomatically: false)
+    model.activeBook = fixtureBook()
+    model.duration = 1_000
+    model.position = 300
+    model.wantsPlayback = true
+    model.receiveExternalProgress(
+      .init(
+        itemID: "book", sessionID: nil,
+        progress: .init(currentTime: 100, duration: 1_000, isFinished: false, lastUpdate: 1)))
+    model.wantsPlayback = false
+    #expect(model.needsPositionRecovery)
+    let choice = model.knownPositions.first { $0.source == .thisMac }!
+    await server.setRemote(position: 500, baseline: 2)
+    await model.recover(choice)
+    #expect(model.needsPositionRecovery)
+    #expect(model.position == 300)
+    #expect(model.knownPositions.contains { $0.position == 500 && $0.source == .audiobookshelf })
+    #expect(await server.writes.isEmpty)
+    let refreshedChoice = model.knownPositions.first { $0.source == .thisMac }!
+    await model.recover(refreshedChoice)
+    #expect(!model.needsPositionRecovery)
+    #expect(!player.playing)
+    await model.networkBecameAvailable()
+    #expect(await server.remote.currentTime == 300)
   }
 
   @Test("an unloaded player cannot erase the cached position or duration")
@@ -472,16 +531,16 @@ struct AppModelTests {
     #expect(!player.playing)
   }
 
-  @Test("entering Settings cancels Search and returning shows Player")
+  @Test("opening Settings cancels Search without changing playback")
   func settingsCancelsSearch() {
     let model = AppModel(stateStore: MemoryStateStore(), startsAutomatically: false)
     model.mode = .player
     model.beginSearch(with: "ranger")
-    model.showSettings()
-    #expect(model.mode == .settings)
+    model.prepareForSettings()
+    #expect(model.mode == .player)
     #expect(model.query.isEmpty)
     #expect(model.searchResult == nil)
-    model.showSettings()
+    model.prepareForSettings()
     #expect(model.mode == .player)
   }
 }

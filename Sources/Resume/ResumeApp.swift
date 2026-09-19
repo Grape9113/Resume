@@ -4,9 +4,6 @@ import SwiftUI
 @main
 struct ResumeApp: App {
   @State private var model = makeModel()
-  #if DEBUG
-    @MainActor private static var testWindow: NSWindow?
-  #endif
 
   private static func makeModel() -> AppModel {
     #if DEBUG
@@ -29,17 +26,16 @@ struct ResumeApp: App {
         model.position = 100
         model.chapters = [.init(id: "chapter", title: "Chapter Two", start: 500)]
         model.mode = .player
-        DispatchQueue.main.async {
-          NSApplication.shared.setActivationPolicy(.regular)
-          let window = NSWindow(
-            contentViewController: NSHostingController(rootView: ResumePanel(model: model)))
-          window.title = "Resume UI Test Panel"
-          window.setContentSize(window.contentView!.fittingSize)
-          window.center()
-          window.makeKeyAndOrderFront(nil)
-          NSApplication.shared.activate()
-          testWindow = window
+        if ProcessInfo.processInfo.arguments.contains("--position-conflict") {
+          model.position = 300
+          model.wantsPlayback = true
+          model.receiveExternalProgress(
+            .init(
+              itemID: "book", sessionID: nil,
+              progress: .init(currentTime: 100, duration: 1_000, isFinished: false, lastUpdate: 1)))
+          model.wantsPlayback = false
         }
+        NSApplication.shared.setActivationPolicy(.regular)
         return model
       }
     #endif
@@ -47,6 +43,24 @@ struct ResumeApp: App {
   }
 
   var body: some Scene {
+    #if DEBUG
+      Window("Resume UI Test Panel", id: "ui-test-player") {
+        ResumePanel(model: model)
+          .onAppear { NSApplication.shared.activate() }
+      }
+      .windowResizability(.contentSize)
+      .defaultLaunchBehavior(
+        ProcessInfo.processInfo.arguments.contains("--ui-testing") ? .presented : .suppressed
+      )
+      .restorationBehavior(.disabled)
+    #endif
+    playerScene
+    Settings {
+      ResumeSettings(model: model)
+    }
+  }
+
+  private var playerScene: some Scene {
     MenuBarExtra("Resume", systemImage: "books.vertical.fill") {
       ResumePanel(model: model)
         .onReceive(

@@ -9,3 +9,5 @@ Product rules live in the current GitHub specification and later explicitly acce
 ## Accepted amendments
 
 [Compact player, startup feedback and automatic pause synchronization](https://github.com/Grape9113/Resume/issues/11) replaces the baseline’s manual Force Push control with automatic pause synchronization and refines loading, focus, warning and layout behavior. Read this amendment alongside issue #2; unchanged baseline requirements still apply.
+
+[Native Settings and conflict-only recovery](https://github.com/Grape9113/Resume/issues/12) supersedes the remaining Force Fetch/dropdown and single-panel Settings requirements. Settings uses the native window and standard Command-comma/app-menu command; version/build metadata lives there. Only unresolved material conflicts show player recovery choices; still-valid alternatives remain in Settings. Recovery verifies current server authority before accepting a choice, without autoplay or a manual force-write action. Execution is tracked by independent tickets [#13](https://github.com/Grape9113/Resume/issues/13) and [#14](https://github.com/Grape9113/Resume/issues/14).

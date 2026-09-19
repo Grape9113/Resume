@@ -4,6 +4,7 @@ import SwiftUI
 
 struct ResumePanel: View {
   @Bindable var model: AppModel
+  @Environment(\.openSettings) private var openSettings
   @FocusState private var panelFocused: Bool
 
   var body: some View {
@@ -14,16 +15,10 @@ struct ResumePanel: View {
         case .library: library
         case .player: player
         case .search: search
-        case .settings: settings
         case .chapters: chapterList
         }
       }
-      Divider()
-      Text(buildIdentity)
-        .font(.caption2.monospacedDigit())
-        .foregroundStyle(.secondary)
-        .frame(maxWidth: .infinity, alignment: .trailing)
-        .accessibilityLabel("Running \(buildIdentity)")
+
     }
     .frame(width: 280)
     .padding(12)
@@ -64,8 +59,8 @@ struct ResumePanel: View {
       return .handled
     }
     .onKeyPress(keys: [",", "v", "q"]) { press in
-      if press.key == ",", press.modifiers == .control {
-        model.showSettings()
+      if press.key == ",", press.modifiers == .command {
+        showSettings()
         return .handled
       }
       if press.key == "q", press.modifiers == .command {
@@ -83,7 +78,7 @@ struct ResumePanel: View {
     .onDisappear {
       if model.mode == .search {
         model.cancelSearch()
-      } else if model.mode == .settings || model.mode == .chapters {
+      } else if model.mode == .chapters {
         model.mode = .player
       }
     }
@@ -167,26 +162,12 @@ struct ResumePanel: View {
         if !model.chapters.isEmpty {
           Button("Chapters") { model.mode = .chapters }.buttonStyle(.borderless)
         }
-        Menu {
-          Button("Force Fetch") { Task { await model.forceFetch() } }
-          if !model.knownPositions.isEmpty {
-            Divider()
-            Section("Choose Position") {
-              ForEach(model.knownPositions) { known in
-                Button(
-                  "\(known.source == .thisMac ? "This Mac" : "Audiobookshelf") · \(time(known.position))"
-                ) { model.recover(known) }
-              }
-            }
-          }
-        } label: {
-          Image(
-            systemName: model.knownPositions.isEmpty
-              ? "arrow.triangle.2.circlepath" : "exclamationmark.arrow.triangle.2.circlepath")
-        }
-        .accessibilityLabel(
-          model.knownPositions.isEmpty
-            ? "Synchronization" : "Synchronization, another position is available")
+        SettingsLink { Image(systemName: "gearshape") }
+          .buttonStyle(.borderless).accessibilityLabel("Settings")
+
+      }
+      if model.needsPositionRecovery {
+        PositionRecoveryChoices(model: model)
       }
     }
   }
@@ -196,7 +177,7 @@ struct ResumePanel: View {
       SearchInput(
         text: $model.query, changed: { model.updateSearch() },
         submit: { Task { await model.acceptSearch() } }, cancel: { model.cancelSearch() },
-        settings: { model.showSettings() }, quit: { model.quit() }
+        settings: { showSettings() }, quit: { model.quit() }
       )
       .frame(height: 24)
       if let result = model.searchResult {
@@ -209,18 +190,10 @@ struct ResumePanel: View {
     }
   }
 
-  private var settings: some View {
-    VStack(alignment: .leading, spacing: 12) {
-      Text("Settings").font(.headline)
-      LabeledContent("Server", value: model.server)
-      LabeledContent("Username", value: model.username)
-      LabeledContent("Library", value: model.selectedLibraryName)
-      Toggle(
-        "Launch at Login",
-        isOn: Binding(get: { model.launchAtLogin }, set: { model.setLaunchAtLogin($0) }))
-      Divider()
-      Button("Sign Out", role: .destructive) { Task { await model.signOut() } }
-    }
+  private func showSettings() {
+    model.prepareForSettings()
+    openSettings()
+    NSApplication.shared.activate()
   }
 
   private var chapterList: some View {
@@ -267,6 +240,35 @@ struct ResumePanel: View {
     return String(format: "%d:%02d:%02d", total / 3600, total % 3600 / 60, total % 60)
   }
 
+}
+
+struct ResumeSettings: View {
+  @Bindable var model: AppModel
+
+  var body: some View {
+    VStack(alignment: .leading, spacing: 12) {
+      Text("Settings").font(.headline)
+      LabeledContent("Server", value: model.server)
+      LabeledContent("Username", value: model.username)
+      LabeledContent("Library", value: model.selectedLibraryName)
+      Toggle(
+        "Launch at Login",
+        isOn: Binding(get: { model.launchAtLogin }, set: { model.setLaunchAtLogin($0) }))
+      if !model.knownPositions.isEmpty {
+        Divider()
+        PositionRecoveryChoices(model: model)
+      }
+      Divider()
+      Text(buildIdentity)
+        .font(.caption.monospacedDigit()).foregroundStyle(.secondary)
+        .accessibilityIdentifier("build-information")
+      Button("Sign Out", role: .destructive) { Task { await model.signOut() } }
+    }
+    .padding(20)
+    .frame(width: 340)
+    .onAppear { model.prepareForSettings() }
+  }
+
   private var buildIdentity: String {
     let version =
       Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String
@@ -283,6 +285,41 @@ struct ResumePanel: View {
         $0.formatted(date: .abbreviated, time: .shortened)
       } ?? "unknown time"
     return "Resume \(version) (build \(build)) · built \(developmentBuild)"
+  }
+}
+
+private struct PositionRecoveryChoices: View {
+  @Bindable var model: AppModel
+
+  var body: some View {
+    VStack(alignment: .leading, spacing: 6) {
+      HStack {
+        Text(
+          model.needsPositionRecovery ? "Choose listening position" : "Other listening positions"
+        )
+        .font(.subheadline.weight(.medium))
+        if model.isResolvingPosition { ProgressView().controlSize(.mini) }
+      }
+      ForEach(model.knownPositions) { known in
+        Button {
+          Task { await model.recover(known) }
+        } label: {
+          HStack {
+            Text(known.source == .thisMac ? "This Mac" : "Audiobookshelf")
+            Spacer()
+            Text(Duration.seconds(known.position).formatted(.time(pattern: .hourMinuteSecond)))
+              .monospacedDigit()
+          }
+          .frame(maxWidth: .infinity)
+        }
+        .disabled(model.isResolvingPosition || model.isLoadingPlayback)
+      }
+      if let message = model.recoveryError {
+        Text(message).font(.caption).foregroundStyle(.secondary)
+      }
+    }
+    .padding(8)
+    .background(.quaternary.opacity(0.4), in: .rect(cornerRadius: 8))
   }
 }
 
@@ -369,7 +406,7 @@ private final class SearchTextField: NSTextField {
   }
   override func performKeyEquivalent(with event: NSEvent) -> Bool {
     let modifiers = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
-    if event.charactersIgnoringModifiers == ",", modifiers == .control {
+    if event.charactersIgnoringModifiers == ",", modifiers == .command {
       settings?()
       return true
     }
