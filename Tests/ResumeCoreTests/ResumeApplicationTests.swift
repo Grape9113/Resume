@@ -325,6 +325,11 @@ struct AppModelTests {
     await model.networkBecameAvailable()
     #expect(await server.remote.currentTime == 300)
     #expect(!model.hasPendingSynchronization)
+    // Retained alternatives remain usable after the chosen position has synchronized.
+    let other = model.knownPositions.first { $0.source == .audiobookshelf }!
+    await model.recover(other)
+    #expect(!model.needsPositionRecovery)
+    #expect(model.position == 100)
   }
 
   @Test("starting after recovery does not authorize overwriting newly moved server progress")
@@ -343,6 +348,21 @@ struct AppModelTests {
     await model.togglePlayback()
     #expect(await server.writes.isEmpty)
     #expect(model.knownPositions.contains { $0.position == 300 })
+  }
+
+  @Test("a chapter selected before first Play still synchronizes normally on pause")
+  func initialChapterSelectionDoesNotCreateConflict() async {
+    let server = TestAudiobookshelf()
+    let model = AppModel(
+      client: server, player: TestPlayer(),
+      stateStore: MemoryStateStore(), startsAutomatically: false)
+    model.activeBook = fixtureBook()
+    model.duration = 1_000
+    model.selectChapter(.init(id: "chapter", title: "Chapter", start: 500))
+    await model.togglePlayback()
+    await model.togglePlayback()
+    #expect(await server.writes == [500])
+    #expect(!model.needsPositionRecovery)
   }
 
   @Test("a replay protected from an expired reset can become Recently finished again")
@@ -405,14 +425,17 @@ struct AppModelTests {
     model.books = [fixtureBook("second")]
     model.beginSearch(with: "ranger")
     await model.acceptSearch()
+    #expect(!model.isResolvingPosition)
     await server.releaseProgress()
     await recovery.value
     #expect(model.activeBook?.id == "second")
     #expect(model.position == 300)
   }
 
-  @Test("a moved server position refreshes recovery choices before accepting an older choice")
-  func recoveryChecksLatestServer() async {
+  @Test(
+    "recovery requests another choice only when the server still materially disagrees",
+    arguments: [300.0, 500.0])
+  func recoveryChecksLatestServer(latest: Double) async {
     let server = TestAudiobookshelf()
     let player = TestPlayer()
     let model = AppModel(
@@ -429,14 +452,16 @@ struct AppModelTests {
     model.wantsPlayback = false
     #expect(model.needsPositionRecovery)
     let choice = model.knownPositions.first { $0.source == .thisMac }!
-    await server.setRemote(position: 500, baseline: 2)
+    await server.setRemote(position: latest, baseline: 2)
     await model.recover(choice)
-    #expect(model.needsPositionRecovery)
+    #expect(model.needsPositionRecovery == (latest == 500))
     #expect(model.position == 300)
-    #expect(model.knownPositions.contains { $0.position == 500 && $0.source == .audiobookshelf })
     #expect(await server.writes.isEmpty)
-    let refreshedChoice = model.knownPositions.first { $0.source == .thisMac }!
-    await model.recover(refreshedChoice)
+    if latest == 500 {
+      #expect(model.knownPositions.contains { $0.position == 500 && $0.source == .audiobookshelf })
+      let refreshedChoice = model.knownPositions.first { $0.source == .thisMac }!
+      await model.recover(refreshedChoice)
+    }
     #expect(!model.needsPositionRecovery)
     #expect(!player.playing)
     await model.networkBecameAvailable()

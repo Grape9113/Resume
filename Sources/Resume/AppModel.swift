@@ -13,7 +13,15 @@ final class AppModel {
   var password = ""
   var libraries: [ABSLibrary] = []
   var books: [Audiobook] = []
-  var activeBook: Audiobook?
+  var activeBook: Audiobook? {
+    didSet {
+      if oldValue?.id != activeBook?.id {
+        recoveryGeneration = UUID()
+        isResolvingPosition = false
+        recoveryError = nil
+      }
+    }
+  }
   var query = ""
   var searchResult: Audiobook?
   var position: TimeInterval = 0
@@ -63,6 +71,7 @@ final class AppModel {
       failed: { [weak self] in self?.playbackFailed() }
     )
   @ObservationIgnored private var playbackGeneration = UUID()
+  @ObservationIgnored private var recoveryGeneration = UUID()
   @ObservationIgnored private var playbackSessionID: String?
   @ObservationIgnored private var progressSynchronizationTask: Task<Void, Never>?
   @ObservationIgnored private var sessionCloseTask: Task<Void, Never>?
@@ -303,7 +312,9 @@ final class AppModel {
           return
         }
         preserve(position, source: .thisMac, comparedWith: remote.currentTime)
-        if usesRecoveredPosition, synchronization.serverBaseline != remote.lastUpdate {
+        if usesRecoveredPosition, synchronization.pendingPosition != nil,
+          synchronization.serverBaseline != remote.lastUpdate
+        {
           synchronization.suspend(position: requestedPosition)
           preserve(remote.currentTime, source: .audiobookshelf, comparedWith: requestedPosition)
           hasPendingSynchronization = true
@@ -393,21 +404,26 @@ final class AppModel {
       knownPositions.contains(where: { $0.id == known.id })
     else { return }
     let generation = playbackGeneration
+    let recovery = recoveryGeneration
     let presentedServerPosition =
-      knownPositions.last { $0.source == .audiobookshelf }?.position
-      ?? synchronization.lastSyncedPosition
+      synchronization.isSuspended
+      ? (knownPositions.last { $0.source == .audiobookshelf }?.position
+        ?? synchronization.lastSyncedPosition)
+      : synchronization.lastSyncedPosition
     isResolvingPosition = true
     recoveryError = nil
-    defer { isResolvingPosition = false }
+    defer { if recoveryGeneration == recovery { isResolvingPosition = false } }
     if let progressSynchronizationTask { await progressSynchronizationTask.value }
     if let sessionCloseTask { await sessionCloseTask.value }
     do {
       let remote = try await client.progress(itemID: book.id)
-      guard activeBook?.id == book.id, playbackGeneration == generation,
+      guard recoveryGeneration == recovery, activeBook?.id == book.id,
+        playbackGeneration == generation,
         knownPositions.contains(where: { $0.id == known.id })
       else { return }
       if abs(remote.currentTime - presentedServerPosition)
-        >= SynchronizationPolicy.meaningfulDifference
+        >= SynchronizationPolicy.meaningfulDifference,
+        abs(remote.currentTime - known.position) >= SynchronizationPolicy.meaningfulDifference
       {
         synchronization.suspend(position: known.position)
         knownPositions = [
@@ -428,7 +444,9 @@ final class AppModel {
       resetSynchronizationBackoff()
       await saveLocalState()
     } catch {
-      guard activeBook?.id == book.id, playbackGeneration == generation else { return }
+      guard recoveryGeneration == recovery, activeBook?.id == book.id,
+        playbackGeneration == generation
+      else { return }
       if !presentAuthenticationFailure(error) {
         recoveryError = "Couldn’t check the server position. Try your choice again."
       }
