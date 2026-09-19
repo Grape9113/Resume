@@ -60,6 +60,138 @@ struct ResumeApplicationTests {
 @Suite("Shipped application behavior")
 @MainActor
 struct AppModelTests {
+  @Test("network recovery cannot start an item whose initial seek is still preparing")
+  func networkRecoveryWaitsForPreparation() async {
+    let player = TestPlayer()
+    player.delayLoad = true
+    let model = AppModel(
+      client: TestAudiobookshelf(), player: player,
+      stateStore: MemoryStateStore(), startsAutomatically: false)
+    model.activeBook = fixtureBook()
+    let start = Task { await model.togglePlayback() }
+    await player.waitUntilLoading()
+    await model.networkBecameAvailable()
+    #expect(!player.playing)
+    #expect(model.isLoadingPlayback)
+    player.finishLoading()
+    await start.value
+    #expect(player.playing)
+  }
+
+  @Test("rejected credentials on pause offer inline reconnection and retain progress")
+  func pauseAuthenticationFailureIsActionable() async {
+    let server = TestAudiobookshelf()
+    let model = AppModel(
+      client: server, player: TestPlayer(),
+      stateStore: MemoryStateStore(), startsAutomatically: false)
+    model.activeBook = fixtureBook()
+    await model.togglePlayback()
+    model.position = 110
+    await server.setProgressError(AudiobookshelfClientError.authenticationRequired)
+    await model.togglePlayback()
+    #expect(model.mode == .connection)
+    #expect(model.errorMessage?.contains("password") == true)
+    #expect(model.hasPendingSynchronization)
+    #expect(model.position == 110)
+  }
+
+  @Test("failed media preparation stops loading and offers a retry")
+  func failedPreparationStopsLoading() async {
+    let player = TestPlayer()
+    player.loadError = URLError(.cannotDecodeContentData)
+    let model = AppModel(
+      client: TestAudiobookshelf(), player: player,
+      stateStore: MemoryStateStore(), startsAutomatically: false)
+    model.activeBook = fixtureBook()
+    await model.togglePlayback()
+    #expect(!model.isLoadingPlayback)
+    #expect(!model.wantsPlayback)
+    #expect(model.errorMessage == "Playback couldn’t start. Try Play again.")
+    #expect(!player.playing)
+  }
+
+  @Test("pause coalesces an in-flight periodic sync into one final position write")
+  func pauseCoalescesProgressWrite() async {
+    let server = TestAudiobookshelf()
+    let player = TestPlayer()
+    let model = AppModel(
+      client: server, player: player,
+      stateStore: MemoryStateStore(), startsAutomatically: false)
+    model.activeBook = fixtureBook()
+    await model.togglePlayback()
+    await server.delayNextProgress()
+    let tick = Task {
+      await model.receivePlayerUpdate(position: 130, duration: 1_000, playing: true)
+    }
+    await server.waitUntilProgressRequested()
+    let pause = Task { await model.togglePlayback() }
+    while model.wantsPlayback { await Task.yield() }
+    #expect(!player.playing)
+    await server.releaseProgress()
+    await tick.value
+    await pause.value
+    #expect(await server.writes == [130])
+    #expect(await server.closedSessions == ["session-book"])
+    #expect(!model.isLoadingPlayback)
+  }
+
+  @Test("background position refresh failures do not leave a persistent warning")
+  func transientProgressFailureIsQuiet() async {
+    let server = TestAudiobookshelf()
+    let model = AppModel(
+      client: server, player: TestPlayer(),
+      stateStore: MemoryStateStore(), startsAutomatically: false)
+    model.activeBook = fixtureBook()
+    model.position = 100
+    await server.setProgressError(URLError(.timedOut))
+    await model.networkBecameAvailable()
+    #expect(model.errorMessage == nil)
+    #expect(model.position == 100)
+    await server.setProgressError(nil)
+    await model.networkBecameAvailable()
+    #expect(model.errorMessage == nil)
+  }
+
+  @Test("startup latency trace separates service round trips and player preparation")
+  func startupLatencyTrace() async {
+    let server = TestAudiobookshelf()
+    await server.setNetworkLatency(.milliseconds(100))
+    let player = TestPlayer()
+    player.loadLatency = .milliseconds(100)
+    let model = AppModel(
+      client: server, player: player,
+      stateStore: MemoryStateStore(), startsAutomatically: false)
+    model.activeBook = fixtureBook()
+    let start = ContinuousClock.now
+    await model.togglePlayback()
+    let elapsed = start.duration(to: .now)
+    print("Startup fixture: two 100ms service responses + 100ms preparation: \(elapsed)")
+    #expect(player.playing)
+  }
+
+  @Test("preparing an item cannot publish its unseeked position")
+  func preparingKeepsAuthoritativePosition() async {
+    let player = TestPlayer()
+    player.delayLoad = true
+    let model = AppModel(
+      client: TestAudiobookshelf(), player: player,
+      stateStore: MemoryStateStore(), startsAutomatically: false)
+    model.activeBook = fixtureBook()
+    model.position = 100
+    model.duration = 1_000
+    let start = Task { await model.togglePlayback() }
+    await player.waitUntilLoading()
+    #expect(model.isLoadingPlayback)
+    await model.receivePlayerUpdate(position: 0, duration: 0, playing: false)
+    #expect(model.position == 100)
+    #expect(model.duration == 1_000)
+    player.finishLoading()
+    await start.value
+    #expect(model.isLoadingPlayback)
+    await model.receivePlayerUpdate(position: 100, duration: 1_000, playing: true)
+    #expect(!model.isLoadingPlayback)
+  }
+
   @Test("pausing and resuming does not extend the original recovery hour")
   func resumeDoesNotRenewRecovery() async {
     let clock = TestClock()
@@ -166,7 +298,7 @@ struct AppModelTests {
     #expect(player.playing == playing)
   }
 
-  @Test("Force Fetch adopts the server and Force Push preserves its displaced position")
+  @Test("Force Fetch adopts the server and recovery preserves a local choice without autoplay")
   func explicitAuthorityCommands() async {
     let server = TestAudiobookshelf()
     let player = TestPlayer()
@@ -183,9 +315,8 @@ struct AppModelTests {
     model.recover(.init(position: 300, source: .thisMac, observedAt: .now))
     #expect(await server.writes.isEmpty)
     #expect(!player.playing)
-    await model.forcePush()
-    #expect(await server.remote.currentTime == 300)
-    #expect(model.knownPositions.contains { $0.position == 100 && $0.source == .audiobookshelf })
+    #expect(model.position == 300)
+    #expect(await server.remote.currentTime == 100)
     #expect(!player.playing)
   }
 
@@ -358,12 +489,52 @@ struct AppModelTests {
 @Suite("Playback adapter", .serialized)
 @MainActor
 struct AudioPlayerTests {
+  @Test("Play reaches observed native playback with stable progress and truthful loading")
+  func applicationToNativePlayback() async throws {
+    let media = SilentAudiobookServer()
+    let service = TestAudiobookshelf()
+    await service.setNetworkLatency(.milliseconds(100))
+    await service.setMediaProvider { url, range in try await media.response(url: url, range: range)
+    }
+    var model: AppModel?
+    let player = AudioPlayer(
+      update: { position, duration, playing in
+        Task {
+          await model?.receivePlayerUpdate(position: position, duration: duration, playing: playing)
+        }
+      }, stalled: {}, ended: {})
+    defer { player.clear() }
+    let application = AppModel(
+      client: service, player: player,
+      stateStore: MemoryStateStore(), startsAutomatically: false)
+    model = application
+    application.activeBook = fixtureBook()
+    application.position = 100
+    application.duration = 1_000
+    let start = ContinuousClock.now
+    await application.togglePlayback()
+    let preparation = start.duration(to: .now)
+    while !application.isPlaying && start.duration(to: .now) < .seconds(3) {
+      #expect(application.position >= 100)
+      try await Task.sleep(for: .milliseconds(10))
+    }
+    print("Full Play path: prepared \(preparation); observed playback \(start.duration(to: .now))")
+    #expect(application.isPlaying)
+    #expect(!application.isLoadingPlayback)
+    #expect(application.position >= 100)
+  }
+
   @Test("real playback starts promptly at the book position", arguments: [1, 3])
   func realPlaybackStartup(parts: Int) async throws {
     let server = SilentAudiobookServer()
     let position: Double = parts == 1 ? 1800 : 4500
     var lastPosition: Double = 0
-    let player = AudioPlayer(update: { time, _, _ in lastPosition = time }, stalled: {}, ended: {})
+    var observedPositions: [Double] = []
+    let player = AudioPlayer(
+      update: { time, _, _ in
+        lastPosition = time
+        observedPositions.append(time)
+      }, stalled: {}, ended: {})
     defer { player.clear() }
     // Also bounds a broken seek: unloading resolves AVPlayer's pending seek completion.
     let deadline = Task {
@@ -378,6 +549,7 @@ struct AudioPlayerTests {
       position: position, speed: 2, title: "Silent fixture", author: "Test",
       bookDuration: Double(parts * 3600))
     let preparation = start.duration(to: .now)
+    print("Native \(parts)-part preparation: \(preparation)")
     #expect(preparation < .seconds(1))
     let startupBytes = await server.bytesSent
     #expect(startupBytes < parts * 4 * 1024 * 1024)
@@ -385,6 +557,8 @@ struct AudioPlayerTests {
     while lastPosition <= position && start.duration(to: .now) < .seconds(3) {
       try await Task.sleep(for: .milliseconds(25))
     }
+    print("Native \(parts)-part time-to-advancing-playback: \(start.duration(to: .now))")
+    #expect(observedPositions.allSatisfy { $0 >= position - 1 })
     #expect(lastPosition > position)
     #expect(lastPosition < position + 6)
     player.clear()

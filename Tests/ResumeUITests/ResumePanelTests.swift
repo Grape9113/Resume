@@ -8,8 +8,36 @@ final class ResumePanelTests: XCTestCase {
     let app = XCUIApplication()
     app.launchArguments = ["--ui-testing"]
     app.launch()
+    app.activate()
     XCTAssertTrue(app.buttons["Play"].waitForExistence(timeout: 5))
+    let capture = XCTAttachment(screenshot: app.windows.firstMatch.screenshot())
+    capture.name = "Player panel"
+    capture.lifetime = .keepAlways
+    add(capture)
     return app
+  }
+
+  func testCompactPlayerHasAutomaticSyncAndLoadingFeedback() {
+    let app = XCUIApplication()
+    app.launchArguments = ["--ui-testing", "--delayed-playback"]
+    app.launch()
+    app.activate()
+    XCTAssertTrue(app.buttons["Play"].waitForExistence(timeout: 5))
+    XCTAssertLessThan(app.windows.firstMatch.frame.width, 330)
+    XCTAssertLessThan(app.windows.firstMatch.frame.height, 480)
+    app.menuButtons["Synchronization"].click()
+    XCTAssertFalse(app.menuItems["Force Push"].exists)
+    XCTAssertTrue(app.menuItems["Force Fetch"].exists)
+    app.typeKey(.escape, modifierFlags: [])
+    app.buttons["Play"].click()
+    let loading = app.activityIndicators["Loading playback"]
+    XCTAssertTrue(loading.waitForExistence(timeout: 2))
+    XCTAssertTrue(loading.waitForNonExistence(timeout: 6))
+    XCTAssertTrue(app.buttons["Pause"].exists)
+    let capture = XCTAttachment(screenshot: app.windows.firstMatch.screenshot())
+    capture.name = "Compact player"
+    capture.lifetime = .keepAlways
+    add(capture)
   }
 
   func testSpaceControlsPlaybackAndProgressCannotSeek() {

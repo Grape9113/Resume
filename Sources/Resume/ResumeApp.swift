@@ -11,9 +11,18 @@ struct ResumeApp: App {
   private static func makeModel() -> AppModel {
     #if DEBUG
       if ProcessInfo.processInfo.arguments.contains("--ui-testing") {
+        let player = TestPlayer()
+        if ProcessInfo.processInfo.arguments.contains("--delayed-playback") {
+          player.loadLatency = .seconds(3)
+        }
         let model = AppModel(
-          client: TestAudiobookshelf(), player: TestPlayer(),
+          client: TestAudiobookshelf(), player: player,
           stateStore: MemoryStateStore(), vault: TestConnectionStore(), startsAutomatically: false)
+        player.onPlaybackChange = { [weak model] position, playing in
+          Task {
+            await model?.receivePlayerUpdate(position: position, duration: 1_000, playing: playing)
+          }
+        }
         model.books = [fixtureBook()]
         model.activeBook = model.books.first
         model.duration = 1_000
@@ -21,10 +30,11 @@ struct ResumeApp: App {
         model.chapters = [.init(id: "chapter", title: "Chapter Two", start: 500)]
         model.mode = .player
         DispatchQueue.main.async {
+          NSApplication.shared.setActivationPolicy(.regular)
           let window = NSWindow(
             contentViewController: NSHostingController(rootView: ResumePanel(model: model)))
           window.title = "Resume UI Test Panel"
-          window.setContentSize(NSSize(width: 348, height: 540))
+          window.setContentSize(window.contentView!.fittingSize)
           window.center()
           window.makeKeyAndOrderFront(nil)
           NSApplication.shared.activate()

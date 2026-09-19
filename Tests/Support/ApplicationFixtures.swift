@@ -14,6 +14,9 @@
   @MainActor
   final class TestPlayer: PlaybackControlling {
     var delayLoad = false
+    var loadLatency: Duration = .zero
+    var loadError: URLError?
+    var onPlaybackChange: ((TimeInterval, Bool) -> Void)?
     private var loading: CheckedContinuation<Void, Never>?
     private var loadObserver: CheckedContinuation<Void, Never>?
     func waitUntilLoading() async {
@@ -34,6 +37,8 @@
       position: TimeInterval, speed: Double, title: String, author: String,
       bookDuration: TimeInterval
     ) async throws {
+      try await Task.sleep(for: loadLatency)
+      if let loadError { throw loadError }
       hasItem = true
       self.position = position
       rate = Float(speed)
@@ -45,8 +50,14 @@
         }
       }
     }
-    func play() { playing = true }
-    func pause() { playing = false }
+    func play() {
+      playing = true
+      onPlaybackChange?(position, true)
+    }
+    func pause() {
+      playing = false
+      onPlaybackChange?(position, false)
+    }
     func seek(to position: TimeInterval) { self.position = position }
     func setArtwork(_ image: NSImage) {}
     func unloadKeepingNowPlaying() {
@@ -64,6 +75,16 @@
 
   actor TestAudiobookshelf: AudiobookshelfServing {
     var remote = ABSProgress(currentTime: 100, duration: 1_000, isFinished: false, lastUpdate: 1)
+    var mediaProvider: (@Sendable (URL, String?) async throws -> AuthenticatedMediaResponse)?
+    func setMediaProvider(
+      _ provider: @escaping @Sendable (URL, String?) async throws -> AuthenticatedMediaResponse
+    ) {
+      mediaProvider = provider
+    }
+    var networkLatency: Duration = .zero
+    var progressError: (any Error)?
+    func setNetworkLatency(_ delay: Duration) { networkLatency = delay }
+    func setProgressError(_ error: (any Error)?) { progressError = error }
     var sessionPosition: Double?
     func setSessionPosition(_ position: Double) { sessionPosition = position }
     var writes: [Double] = []
@@ -88,14 +109,17 @@
     func accessToken() -> String? { nil }
     func libraries() -> [ABSLibrary] { [] }
     func items(libraryID: String) -> [Audiobook] { [] }
-    func startPlayback(itemID: String) -> PlaybackSession {
-      .init(
+    func startPlayback(itemID: String) async throws -> PlaybackSession {
+      try await Task.sleep(for: networkLatency)
+      return .init(
         id: "session-" + itemID, currentTime: sessionPosition ?? remote.currentTime,
         duration: remote.duration,
         chapters: [], streamURLs: [URL(string: "https://example.test/audio")!])
     }
     func chapters(itemID: String) -> [Chapter] { [] }
-    func progress(itemID: String) async -> ABSProgress {
+    func progress(itemID: String) async throws -> ABSProgress {
+      try await Task.sleep(for: networkLatency)
+      if let progressError { throw progressError }
       let snapshot = remote
       if shouldDelayProgress {
         shouldDelayProgress = false
@@ -108,7 +132,8 @@
       return snapshot
     }
     func coverData(itemID: String) throws -> Data { throw URLError(.notConnectedToInternet) }
-    func mediaData(url: URL, range: String?) throws -> AuthenticatedMediaResponse {
+    func mediaData(url: URL, range: String?) async throws -> AuthenticatedMediaResponse {
+      if let mediaProvider { return try await mediaProvider(url, range) }
       throw URLError(.notConnectedToInternet)
     }
     func pushProgress(

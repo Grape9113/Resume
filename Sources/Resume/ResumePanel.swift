@@ -7,7 +7,7 @@ struct ResumePanel: View {
   @FocusState private var panelFocused: Bool
 
   var body: some View {
-    VStack(spacing: 10) {
+    VStack(spacing: 6) {
       Group {
         switch model.mode {
         case .connection: connection
@@ -25,8 +25,8 @@ struct ResumePanel: View {
         .frame(maxWidth: .infinity, alignment: .trailing)
         .accessibilityLabel("Running \(buildIdentity)")
     }
-    .frame(width: 320)
-    .padding(14)
+    .frame(width: 280)
+    .padding(12)
     .overlay(alignment: .top) {
       if let message = model.errorMessage {
         Text(message).font(.caption).padding(8).background(.regularMaterial).clipShape(
@@ -34,8 +34,12 @@ struct ResumePanel: View {
         ).padding(8)
       }
     }
-    .focusable()
-    .focused($panelFocused)
+    .background {
+      // This is only the keyboard landing target. Real controls keep their native focus effects.
+      Color.clear.frame(width: 1, height: 1)
+        .focusable().focusEffectDisabled().focused($panelFocused)
+        .accessibilityHidden(true)
+    }
     .onChange(of: model.mode) {
       panelFocused = model.mode != .search
     }
@@ -115,7 +119,7 @@ struct ResumePanel: View {
   }
 
   private var player: some View {
-    VStack(spacing: 12) {
+    VStack(spacing: 6) {
       cover(for: model.activeBook)
       ProgressView(value: model.duration > 0 ? model.position / model.duration : 0)
         .accessibilityLabel("Book progress")
@@ -131,13 +135,21 @@ struct ResumePanel: View {
         } label: {
           Image(systemName: "gobackward.15")
         }.accessibilityLabel("Back 15 seconds")
-        Button {
-          Task { await model.togglePlayback() }
-        } label: {
-          Image(systemName: (model.isPlaying || model.wantsPlayback) ? "pause.fill" : "play.fill")
-            .font(.title2)
+        ZStack {
+          Button {
+            Task { await model.togglePlayback() }
+          } label: {
+            Image(systemName: (model.isPlaying || model.wantsPlayback) ? "pause.fill" : "play.fill")
+              .font(.title2)
+              .frame(width: 36, height: 36)
+          }
+          .accessibilityLabel((model.isPlaying || model.wantsPlayback) ? "Pause" : "Play")
+          if model.isLoadingPlayback {
+            ProgressView().controlSize(.small)
+              .offset(x: 30)
+              .accessibilityLabel("Loading playback")
+          }
         }
-        .accessibilityLabel((model.isPlaying || model.wantsPlayback) ? "Pause" : "Play")
         Button {
           model.skip(30)
         } label: {
@@ -157,7 +169,6 @@ struct ResumePanel: View {
         }
         Menu {
           Button("Force Fetch") { Task { await model.forceFetch() } }
-          Button("Force Push") { Task { await model.forcePush() } }
           if !model.knownPositions.isEmpty {
             Divider()
             Section("Choose Position") {

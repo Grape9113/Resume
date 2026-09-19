@@ -20,6 +20,8 @@ final class AppModel {
   var duration: TimeInterval = 0
   var isPlaying = false
   var wantsPlayback = false
+  var isLoadingPlayback: Bool { wantsPlayback && !isPlaying }
+  private var isPreparingPlayback = false
   var speed = 2.0
   var chapters: [Chapter] = []
   var knownPositions: [KnownPosition] = []
@@ -54,10 +56,13 @@ final class AppModel {
         }
       },
       stalled: { [weak self] in self?.playbackStalled() },
-      ended: { [weak self] in self?.playbackEnded() }
+      ended: { [weak self] in self?.playbackEnded() },
+      failed: { [weak self] in self?.playbackFailed() }
     )
   @ObservationIgnored private var playbackGeneration = UUID()
   @ObservationIgnored private var playbackSessionID: String?
+  @ObservationIgnored private var progressSynchronizationTask: Task<Void, Never>?
+  @ObservationIgnored private var sessionCloseTask: Task<Void, Never>?
   @ObservationIgnored private var lastSyncedPosition: TimeInterval = 0
   @ObservationIgnored private var didMarkFinished = false
   @ObservationIgnored private var localState = LocalState()
@@ -97,8 +102,10 @@ final class AppModel {
         await self.togglePlayback()
       },
       pause: { [weak self] in
-        guard let self, self.isPlaying else { return }
+        guard let self, self.isPlaying || self.wantsPlayback else { return }
+        self.playbackGeneration = UUID()
         self.wantsPlayback = false
+        self.isPreparingPlayback = false
         self.isPlaying = false
         self.player.pause()
         Task { await self.closePlaybackSession() }
@@ -149,6 +156,7 @@ final class AppModel {
     isBusy = true
     defer { isBusy = false }
     do {
+      errorMessage = nil
       try await client.login(server: url, username: username, password: password)
       password = ""
       libraries = try await client.libraries()
@@ -259,22 +267,34 @@ final class AppModel {
 
   func togglePlayback() async {
     guard let book = activeBook else { return }
+    if !isPlaying && !wantsPlayback { playbackGeneration = UUID() }
     let generation = playbackGeneration
     do {
       if isPlaying || wantsPlayback {
         playbackGeneration = UUID()
         wantsPlayback = false
+        isPreparingPlayback = false
         isPlaying = false
         player.pause()
         await closePlaybackSession()
         await saveLocalState()
         return
-      } else if player.hasItem {
-        wantsPlayback = true
-        player.play()
       } else {
         wantsPlayback = true
+        errorMessage = nil
+        isPreparingPlayback = true
+        defer { if playbackGeneration == generation { isPreparingPlayback = false } }
+        if let sessionCloseTask { await sessionCloseTask.value }
+        guard playbackGeneration == generation, activeBook?.id == book.id, wantsPlayback else {
+          return
+        }
+        if player.hasItem {
+          player.play()
+          return
+        }
         let requestedPosition = position
+        // Establish the baseline before creating a session: a concurrent newer progress
+        // response must never authorize writing an older session position over it.
         let remote = try await client.progress(itemID: book.id)
         guard playbackGeneration == generation, activeBook?.id == book.id, wantsPlayback else {
           return
@@ -283,6 +303,9 @@ final class AppModel {
         synchronization.resolve(serverBaseline: remote.lastUpdate, position: remote.currentTime)
         let session = try await client.startPlayback(itemID: book.id)
         guard playbackGeneration == generation, activeBook?.id == book.id, wantsPlayback else {
+          try? await client.close(
+            sessionID: session.id, position: session.currentTime,
+            duration: session.duration, timeListened: 0)
           return
         }
         // Audiobookshelf intentionally reports a zero session start for finished items.
@@ -332,7 +355,13 @@ final class AppModel {
     } catch {
       guard playbackGeneration == generation else { return }
       wantsPlayback = false
-      errorMessage = "Playback couldn’t start."
+      isPreparingPlayback = false
+      if !presentAuthenticationFailure(error) {
+        errorMessage = "Playback couldn’t start. Try Play again."
+      }
+      await closePlaybackSession()
+      guard playbackGeneration == generation, activeBook?.id == book.id else { return }
+      player.unloadKeepingNowPlaying()
     }
   }
 
@@ -350,6 +379,7 @@ final class AppModel {
 
   func forceFetch() async {
     guard let book = activeBook else { return }
+    errorMessage = nil
     let generation = playbackGeneration
     do {
       let remote = try await client.progress(itemID: book.id)
@@ -363,27 +393,9 @@ final class AppModel {
       hasPendingSynchronization = false
       resetSynchronizationBackoff()
       await saveLocalState()
-    } catch { errorMessage = "Force Fetch failed." }
-  }
-
-  func forcePush() async {
-    guard let book = activeBook else { return }
-    let generation = playbackGeneration
-    do {
-      let remote = try await client.progress(itemID: book.id)
-      guard activeBook?.id == book.id, playbackGeneration == generation else { return }
-      preserve(remote.currentTime, source: .audiobookshelf, comparedWith: position)
-      try await client.pushProgress(
-        itemID: book.id, position: position, duration: duration,
-        isFinished: recentlyFinishedAt[book.id] != nil)
-      let refreshed = try await client.progress(itemID: book.id)
-      guard activeBook?.id == book.id, playbackGeneration == generation else { return }
-      synchronization.resolve(serverBaseline: refreshed.lastUpdate, position: refreshed.currentTime)
-      hasPendingSynchronization = false
-      usesRecoveredPosition = false
-      resetSynchronizationBackoff()
-      await saveLocalState()
-    } catch { errorMessage = "Force Push failed. Your Mac position is preserved." }
+    } catch {
+      if !presentAuthenticationFailure(error) { errorMessage = "Force Fetch failed. Try again." }
+    }
   }
 
   func recover(_ known: KnownPosition) {
@@ -413,6 +425,14 @@ final class AppModel {
   }
 
   private func playbackTick() async {
+    guard progressSynchronizationTask == nil, sessionCloseTask == nil else { return }
+    let task = Task { await synchronizePlaybackTick() }
+    progressSynchronizationTask = task
+    await task.value
+    progressSynchronizationTask = nil
+  }
+
+  private func synchronizePlaybackTick() async {
     guard isPlaying, let book = activeBook else { return }
     if let nextSynchronizationAttemptAt, nextSynchronizationAttemptAt > now() { return }
     expireRecoveryIfNeeded()
@@ -421,6 +441,7 @@ final class AppModel {
     {
       do {
         let remote = try await client.progress(itemID: book.id)
+        guard isPlaying, activeBook?.id == book.id else { return }
         let snapshot = ServerProgress(
           position: remote.currentTime, duration: remote.duration, isFinished: remote.isFinished,
           lastUpdate: remote.lastUpdate)
@@ -430,7 +451,7 @@ final class AppModel {
           knownPositions = alternatives
           beginRecoveryWindowIfNeeded()
           hasPendingSynchronization = true
-          errorMessage = "Another listening position is available. Choose which one to keep."
+          // The synchronization menu exposes actionable position alternatives.
           await saveLocalState()
           return
         case .upload:
@@ -450,12 +471,14 @@ final class AppModel {
         await saveLocalState()
       } catch {
         scheduleSynchronizationRetry(position: position)
-        errorMessage = "Finishing this book is saved on this Mac and will be retried."
+        presentAuthenticationFailure(error)
+        // Local progress remains pending; retry without interrupting the player.
       }
     }
     guard let playbackSessionID, abs(position - lastSyncedPosition) >= 15 else { return }
     do {
       let remote = try await client.progress(itemID: book.id)
+      guard isPlaying, activeBook?.id == book.id else { return }
       let snapshot = ServerProgress(
         position: remote.currentTime, duration: remote.duration, isFinished: remote.isFinished,
         lastUpdate: remote.lastUpdate)
@@ -464,7 +487,7 @@ final class AppModel {
         knownPositions = alternatives
         beginRecoveryWindowIfNeeded()
         hasPendingSynchronization = true
-        errorMessage = "Another listening position is available. Choose which one to keep."
+        // The synchronization menu exposes actionable position alternatives.
         await saveLocalState()
         return
       case .upload:
@@ -482,7 +505,8 @@ final class AppModel {
       await saveLocalState()
     } catch {
       scheduleSynchronizationRetry(position: position)
-      errorMessage = "Progress is saved on this Mac and will be retried."
+      presentAuthenticationFailure(error)
+      // Local progress remains pending; retry without interrupting the player.
     }
   }
 
@@ -529,7 +553,8 @@ final class AppModel {
       await saveLocalState()
     } catch {
       if synchronization.pendingPosition != nil { scheduleSynchronizationRetry(position: position) }
-      errorMessage = "The server position is temporarily unavailable."
+      presentAuthenticationFailure(error)
+      // Background transport failures are retried without a persistent warning.
     }
   }
 
@@ -632,7 +657,7 @@ final class AppModel {
     preserve(event.progress.currentTime, source: .audiobookshelf, comparedWith: position)
     synchronization.suspend(position: position)
     hasPendingSynchronization = true
-    errorMessage = "Another listening position is available. Choose which one to keep."
+    // The synchronization menu exposes actionable position alternatives.
     Task { await saveLocalState() }
   }
 
@@ -700,7 +725,8 @@ final class AppModel {
           }
           recentlyFinishedAt.removeValue(forKey: bookID)
         } catch {
-          errorMessage = "The finished-book reset will be retried later."
+          presentAuthenticationFailure(error)
+          // Local progress remains pending; retry without interrupting the player.
         }
       } else {
         recentlyFinishedAt.removeValue(forKey: bookID)
@@ -741,13 +767,13 @@ final class AppModel {
     guard let book = activeBook else { return }
     let generation = playbackGeneration
     nextSynchronizationAttemptAt = nil
-    if wantsPlayback, player.hasItem {
+    if wantsPlayback, player.hasItem, !isPreparingPlayback {
       await playbackTick()
       guard playbackGeneration == generation, activeBook?.id == book.id, wantsPlayback else {
         return
       }
       player.play()
-    } else if !isPlaying {
+    } else if !isPlaying && !wantsPlayback {
       await reconcileFinishedBooks()
       guard playbackGeneration == generation, activeBook?.id == book.id else { return }
       await restoreActivePosition()
@@ -764,13 +790,31 @@ final class AppModel {
   }
 
   private func playbackStalled() {
-    errorMessage = "Playback is waiting for the network."
+    isPlaying = false
+  }
+
+  @discardableResult
+  private func presentAuthenticationFailure(_ error: Error) -> Bool {
+    guard case AudiobookshelfClientError.authenticationRequired = error else { return false }
+    resetSynchronizationBackoff()
+    mode = .connection
+    errorMessage = "Your Audiobookshelf session expired. Enter your password to reconnect."
+    return true
+  }
+
+  private func playbackFailed() {
+    wantsPlayback = false
+    isPlaying = false
+    isPreparingPlayback = false
+    player.pause()
+    errorMessage = "Playback stopped. Try Play again."
+    Task { await closePlaybackSession() }
   }
 
   func receivePlayerUpdate(position: TimeInterval, duration: TimeInterval, playing: Bool)
     async
   {
-    guard player.hasItem else { return }
+    guard player.hasItem, !isPreparingPlayback else { return }
     let now = ContinuousClock.now
     if isPlaying, let lastPlaybackTickInstant {
       let elapsed = lastPlaybackTickInstant.duration(to: now).components
@@ -779,8 +823,8 @@ final class AppModel {
     }
     self.lastPlaybackTickInstant = now
     self.position = position
-    self.duration = duration
-    isPlaying = playing
+    if duration.isFinite && duration > 0 { self.duration = duration }
+    isPlaying = playing && wantsPlayback
     await playbackTick()
   }
 
@@ -816,10 +860,25 @@ final class AppModel {
   }
 
   private func closePlaybackSession() async {
+    if let sessionCloseTask {
+      await sessionCloseTask.value
+      return
+    }
+    let task = Task {
+      if let progressSynchronizationTask { await progressSynchronizationTask.value }
+      await finishPlaybackSession()
+    }
+    sessionCloseTask = task
+    await task.value
+    sessionCloseTask = nil
+  }
+
+  private func finishPlaybackSession() async {
     guard let sessionID = playbackSessionID else { return }
     do {
       guard let book = activeBook else { return }
       let remote = try await client.progress(itemID: book.id)
+      guard playbackSessionID == sessionID, activeBook?.id == book.id else { return }
       let snapshot = ServerProgress(
         position: remote.currentTime, duration: remote.duration, isFinished: remote.isFinished,
         lastUpdate: remote.lastUpdate)
@@ -839,6 +898,7 @@ final class AppModel {
         sessionID: sessionID, position: position, duration: duration,
         timeListened: listenedSinceSync)
       let confirmed = try await client.progress(itemID: book.id)
+      guard playbackSessionID == sessionID, activeBook?.id == book.id else { return }
       synchronization.recordSuccess(position: position, newServerBaseline: confirmed.lastUpdate)
       playbackSessionID = nil
       hasPendingSynchronization = false
@@ -846,10 +906,12 @@ final class AppModel {
       resetSynchronizationBackoff()
       player.unloadKeepingNowPlaying()
     } catch {
+      guard playbackSessionID == sessionID else { return }
       playbackSessionID = nil
       player.unloadKeepingNowPlaying()
       scheduleSynchronizationRetry(position: position)
-      errorMessage = "Progress is saved on this Mac and will be retried."
+      presentAuthenticationFailure(error)
+      // Local progress remains pending; retry without interrupting the player.
     }
   }
 

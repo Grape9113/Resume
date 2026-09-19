@@ -72,10 +72,6 @@ _Avoid_: Paused playback, disconnected server
 The listener's explicit choice to adopt Audiobookshelf's listening position.
 _Avoid_: Refresh, pull
 
-**Force Push**:
-The listener's explicit choice to replace Audiobookshelf's listening position with this Mac's position.
-_Avoid_: Ordinary sync, upload
-
 **Recently finished**:
 The temporary post-completion state identifying a book whose ending remains available for replay before guarded reset.
 _Avoid_: Archived, permanently completed
