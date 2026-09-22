@@ -74,6 +74,8 @@
   }
 
   actor TestAudiobookshelf: AudiobookshelfServing {
+    private let fixtureCover: Data?
+    init(coverData: Data? = nil) { fixtureCover = coverData }
     var remote = ABSProgress(currentTime: 100, duration: 1_000, isFinished: false, lastUpdate: 1)
     var mediaProvider: (@Sendable (URL, String?) async throws -> AuthenticatedMediaResponse)?
     func setMediaProvider(
@@ -131,7 +133,10 @@
       }
       return snapshot
     }
-    func coverData(itemID: String) throws -> Data { throw URLError(.notConnectedToInternet) }
+    func coverData(itemID: String) throws -> Data {
+      if let fixtureCover { return fixtureCover }
+      throw URLError(.notConnectedToInternet)
+    }
     func mediaData(url: URL, range: String?) async throws -> AuthenticatedMediaResponse {
       if let mediaProvider { return try await mediaProvider(url, range) }
       throw URLError(.notConnectedToInternet)
@@ -161,6 +166,35 @@
     .init(
       id: id, title: "Ranger's Apprentice", authors: ["John Flanagan"], series: [],
       lastPlayedAt: nil, duration: 1_000)
+  }
+
+  // Synthetic artwork exercises fitting and contrast without shipping a book-cover asset.
+  @MainActor
+  func fixtureCover(portrait: Bool) -> Data? {
+    let size = NSSize(width: portrait ? 180 : 260, height: 260)
+    let image = NSImage(size: size)
+    image.lockFocus()
+    NSColor(red: 0.08, green: 0.18, blue: 0.24, alpha: 1).setFill()
+    NSRect(origin: .zero, size: size).fill()
+    NSColor(red: 0.88, green: 0.68, blue: 0.34, alpha: 1).setFill()
+    NSBezierPath(ovalIn: NSRect(x: size.width / 2 - 48, y: 78, width: 96, height: 96)).fill()
+    let paragraph = NSMutableParagraphStyle()
+    paragraph.alignment = .center
+    let title = "RANGER'S\nAPPRENTICE"
+    title.draw(
+      in: NSRect(x: 8, y: 177, width: size.width - 16, height: 60),
+      withAttributes: [
+        .font: NSFont.systemFont(ofSize: 19, weight: .bold), .foregroundColor: NSColor.white,
+        .paragraphStyle: paragraph,
+      ])
+    "JOHN FLANAGAN".draw(
+      in: NSRect(x: 8, y: 25, width: size.width - 16, height: 20),
+      withAttributes: [
+        .font: NSFont.systemFont(ofSize: 11, weight: .medium), .foregroundColor: NSColor.white,
+        .paragraphStyle: paragraph,
+      ])
+    image.unlockFocus()
+    return image.tiffRepresentation
   }
 
   actor TestConnectionStore: ConnectionStoring {

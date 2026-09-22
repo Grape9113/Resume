@@ -560,12 +560,33 @@ struct AppModelTests {
   func settingsCancelsSearch() {
     let model = AppModel(stateStore: MemoryStateStore(), startsAutomatically: false)
     model.mode = .player
+    model.activeBook = fixtureBook()
+    model.isPlaying = true
+    model.wantsPlayback = true
     model.beginSearch(with: "ranger")
     model.prepareForSettings()
-    #expect(model.mode == .player)
+    #expect(model.mode == .settings)
     #expect(model.query.isEmpty)
     #expect(model.searchResult == nil)
+    #expect(model.isPlaying && model.wantsPlayback)
+    #expect(model.activeBook?.id == "book")
     model.prepareForSettings()
+    #expect(model.mode == .settings)
+    model.leaveTemporaryMode()
+    #expect(model.mode == .player)
+    #expect(model.isPlaying && model.wantsPlayback)
+    for requiredMode in [AppModel.Mode.connection, .library] {
+      model.mode = requiredMode
+      model.prepareForSettings()
+      model.prepareForSettings()
+      model.leaveTemporaryMode()
+      #expect(model.mode == requiredMode)
+      model.leaveTemporaryMode()
+      #expect(model.mode == requiredMode)
+    }
+    model.mode = .chapters
+    model.prepareForSettings()
+    model.leaveTemporaryMode()
     #expect(model.mode == .player)
   }
 }

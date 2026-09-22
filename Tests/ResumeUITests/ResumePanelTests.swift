@@ -26,7 +26,12 @@ final class ResumePanelTests: XCTestCase {
     XCTAssertTrue(app.staticTexts["build-information"].exists)
     app.typeKey(",", modifierFlags: .command)
     XCTAssertEqual(app.windows.containing(.staticText, identifier: "Settings").count, 1)
-    XCTAssertFalse(playerWindow.staticTexts["build-information"].exists)
+    XCTAssertTrue(playerWindow.staticTexts["build-information"].exists)
+    XCTAssertEqual(app.windows.count, 1)
+    XCTAssertFalse(app.buttons["Back"].exists)
+    app.typeKey(.escape, modifierFlags: [])
+    XCTAssertTrue(playerWindow.buttons["Play"].waitForExistence(timeout: 3))
+    XCTAssertFalse(app.buttons["Settings"].exists)
   }
 
   func testAppMenuOpensSameSettings() {
@@ -120,8 +125,7 @@ final class ResumePanelTests: XCTestCase {
     app.typeKey(",", modifierFlags: .command)
     XCTAssertTrue(app.staticTexts["Settings"].waitForExistence(timeout: 3))
     XCTAssertFalse(search.exists)
-    app.typeKey("w", modifierFlags: .command)
-    app.windows["Resume UI Test Panel"].click()
+    app.typeKey(.escape, modifierFlags: [])
     XCTAssertTrue(app.buttons["Play"].waitForExistence(timeout: 3))
     app.typeText("m")
     XCTAssertTrue(search.waitForExistence(timeout: 3))
@@ -140,4 +144,90 @@ final class ResumePanelTests: XCTestCase {
     XCTAssertTrue(search.waitForExistence(timeout: 3))
     XCTAssertEqual(search.value as? String, "m")
   }
+  func testConnectionKeyboardSubmissionAndSettingsReturn() {
+    let app = XCUIApplication()
+    app.launchArguments = ["--ui-testing", "--connection-mode"]
+    app.launch()
+    app.activate()
+    let server = app.textFields["https://your-pod.pikapod.net"]
+    XCTAssertTrue(server.waitForExistence(timeout: 5))
+    app.typeKey(.escape, modifierFlags: [])
+    XCTAssertTrue(server.exists)
+    app.typeKey(",", modifierFlags: .command)
+    XCTAssertTrue(app.staticTexts["Settings"].waitForExistence(timeout: 3))
+    app.typeKey(.escape, modifierFlags: [])
+    XCTAssertTrue(server.waitForExistence(timeout: 3))
+    server.click()
+    server.typeText("http://example.test")
+    app.typeKey(.return, modifierFlags: [])
+    XCTAssertTrue(
+      app.staticTexts["Enter your PikaPods server address."].waitForExistence(timeout: 3))
+    XCTAssertTrue(app.buttons["Connect"].isHittable)
+    let capture = XCTAttachment(screenshot: app.windows.firstMatch.screenshot())
+    capture.name = "Connection validation"
+    capture.lifetime = .keepAlways
+    add(capture)
+  }
+
+  func testChaptersAndSearchKeepTheSameShell() {
+    let app = openPlayer()
+    let size = app.windows.firstMatch.frame.size
+    app.buttons["Chapters"].click()
+    XCTAssertTrue(app.staticTexts["Chapters"].exists)
+    app.typeKey(",", modifierFlags: .command)
+    XCTAssertTrue(app.staticTexts["Settings"].waitForExistence(timeout: 3))
+    app.typeKey(.escape, modifierFlags: [])
+    XCTAssertTrue(app.buttons["Play"].waitForExistence(timeout: 3))
+    app.buttons["Chapters"].click()
+    let chapter = app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", "Chapter Two"))
+      .firstMatch
+    XCTAssertTrue(chapter.waitForExistence(timeout: 3))
+    capture(app, "Chapters")
+    chapter.click()
+    XCTAssertTrue(app.buttons["Play"].waitForExistence(timeout: 3))
+    XCTAssertEqual(app.windows.firstMatch.frame.size, size)
+    app.typeText("ranger")
+    XCTAssertTrue(app.staticTexts["John Flanagan"].waitForExistence(timeout: 3))
+    XCTAssertFalse(app.buttons["Play"].exists)
+    XCTAssertEqual(app.windows.firstMatch.frame.size, size)
+    capture(app, "Search candidate")
+    app.typeKey("a", modifierFlags: .command)
+    app.typeText("zzzzzzzzzzzzzz")
+    XCTAssertTrue(app.staticTexts["No match"].waitForExistence(timeout: 3))
+    capture(app, "Search no match")
+    app.typeKey(.escape, modifierFlags: [])
+    XCTAssertTrue(app.buttons["Play"].waitForExistence(timeout: 3))
+  }
+
+  func testAppearanceAndLongContentRemainUsable() {
+    for dark in [false, true] {
+      for mode in [
+        "--square-artwork", "--portrait-artwork", "--library-mode", "--player-error",
+        "--empty-player",
+      ] {
+        let app = XCUIApplication()
+        app.launchArguments = ["--ui-testing", mode] + (dark ? ["--dark-appearance"] : [])
+        app.launch()
+        app.activate()
+        let control = mode == "--library-mode" ? app.buttons["Audiobooks"] : app.buttons["Play"]
+        XCTAssertTrue(control.waitForExistence(timeout: 5))
+        XCTAssertTrue(control.isHittable)
+        XCTAssertLessThan(app.windows.firstMatch.frame.width, 290)
+        XCTAssertLessThan(app.windows.firstMatch.frame.height, 340)
+        capture(app, "\(mode) \(dark ? "dark" : "light")")
+        app.typeKey(",", modifierFlags: .command)
+        XCTAssertTrue(app.staticTexts["Settings"].waitForExistence(timeout: 3))
+        capture(app, "Settings \(dark ? "dark" : "light")")
+        app.terminate()
+      }
+    }
+  }
+
+  private func capture(_ app: XCUIApplication, _ name: String) {
+    let attachment = XCTAttachment(screenshot: app.windows.firstMatch.screenshot())
+    attachment.name = name
+    attachment.lifetime = .keepAlways
+    add(attachment)
+  }
+
 }

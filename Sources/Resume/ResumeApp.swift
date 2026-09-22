@@ -12,15 +12,23 @@ struct ResumeApp: App {
         if ProcessInfo.processInfo.arguments.contains("--delayed-playback") {
           player.loadLatency = .seconds(3)
         }
+        let portrait = ProcessInfo.processInfo.arguments.contains("--portrait-artwork")
+        let hasArtwork = portrait || ProcessInfo.processInfo.arguments.contains("--square-artwork")
         let model = AppModel(
-          client: TestAudiobookshelf(), player: player,
+          client: TestAudiobookshelf(
+            coverData: hasArtwork ? fixtureCover(portrait: portrait) : nil), player: player,
           stateStore: MemoryStateStore(), vault: TestConnectionStore(), startsAutomatically: false)
         player.onPlaybackChange = { [weak model] position, playing in
           Task {
             await model?.receivePlayerUpdate(position: position, duration: 1_000, playing: playing)
           }
         }
-        model.books = [fixtureBook()]
+        model.books = [
+          fixtureBook(hasArtwork ? (portrait ? "portrait-preview" : "square-preview") : "book")
+        ]
+        model.server = "https://books.example.test"
+        model.username = "Listener"
+        model.selectedLibraryName = "Audiobooks"
         model.activeBook = model.books.first
         model.duration = 1_000
         model.position = 100
@@ -35,6 +43,25 @@ struct ResumeApp: App {
               progress: .init(currentTime: 100, duration: 1_000, isFinished: false, lastUpdate: 1)))
           model.wantsPlayback = false
         }
+        if ProcessInfo.processInfo.arguments.contains("--connection-mode") {
+          model.activeBook = nil
+          model.server = ""
+          model.username = ""
+          model.mode = .connection
+        }
+        if ProcessInfo.processInfo.arguments.contains("--library-mode") {
+          model.mode = .library
+          model.libraries = [
+            .init(id: "one", name: "Audiobooks", mediaType: "book"),
+            .init(
+              id: "two", name: "A library with a long name for checking wrapping", mediaType: "book"
+            ),
+          ]
+        }
+        if ProcessInfo.processInfo.arguments.contains("--empty-player") { model.activeBook = nil }
+        if ProcessInfo.processInfo.arguments.contains("--player-error") {
+          model.errorMessage = "Playback could not start. Check your connection and try again."
+        }
         NSApplication.shared.setActivationPolicy(.regular)
         return model
       }
@@ -46,6 +73,9 @@ struct ResumeApp: App {
     #if DEBUG
       Window("Resume UI Test Panel", id: "ui-test-player") {
         ResumePanel(model: model)
+          .preferredColorScheme(
+            ProcessInfo.processInfo.arguments.contains("--dark-appearance") ? .dark : .light
+          )
           .onAppear { NSApplication.shared.activate() }
       }
       .windowResizability(.contentSize)
@@ -55,9 +85,14 @@ struct ResumeApp: App {
       .restorationBehavior(.disabled)
     #endif
     playerScene
-    Settings {
-      ResumeSettings(model: model)
-    }
+      .commands {
+        CommandGroup(replacing: .appSettings) {
+          Button("Settings…") {
+            model.prepareForSettings()
+            NSApplication.shared.activate()
+          }.keyboardShortcut(",", modifiers: .command)
+        }
+      }
   }
 
   private var playerScene: some Scene {

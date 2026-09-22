@@ -5,7 +5,7 @@ Resume is a menu-bar Audiobookshelf client centered on reaching and controlling 
 ## Language
 
 **Resume panel**:
-The menu-bar interface surface, whose modes include Connection, Player, Search and Chapter navigation.
+The menu-bar interface surface, whose modes include Connection, Player, Search, Settings and Chapter navigation.
 _Avoid_: Main window, search page
 
 **Active audiobook**:
@@ -29,8 +29,8 @@ The transient panel mode for entering text and considering one best-matching aud
 _Avoid_: Results list, library browser
 
 **Settings**:
-The native window containing Connection information, application settings, build information and retained Position recovery choices.
-_Avoid_: Settings mode, settings dashboard
+The Resume panel mode containing Connection information, application settings, build information and retained Position recovery choices.
+_Avoid_: Preferences window, settings dashboard
 
 **Book progress**:
 The read-only position indicator across the entire audiobook.

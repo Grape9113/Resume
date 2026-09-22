@@ -76,6 +76,8 @@ The intended policy and current implementation therefore are not identical in ev
 
 Accepted amendments [#11](https://github.com/Grape9113/Resume/issues/11) and [#12](https://github.com/Grape9113/Resume/issues/12) supersede the historical manual synchronization controls, recovery-menu placement and single-panel Settings behavior above. Pause synchronization is automatic; conflict choices are conditional in Player and retained in native Settings. Force Fetch/Push are removed, so R2 must not recreate or test those obsolete entry points. Current behavior and verification are indexed by [the specification](specification.md) and [testing record](testing.md); the original register remains dated evidence for the broader open follow-ups.
 
+[Red interface amendment #15](https://github.com/Grape9113/Resume/issues/15) subsequently restores in-panel Settings and replaces the presentation across all modes. Command-comma/app-menu routing remains native, while Escape replaces visible back navigation. The open-book menu-bar icon and final red visual reference explicitly supersede earlier appearance decisions. Playback, synchronization and the broader open follow-ups retain their prior scope.
+
 ## Recovery scope and review
 
 Used `grill-with-docs` with its `grilling`/`domain-modeling` primitives under the user's evidence-first recovery instruction; `to-spec`; `to-tickets`; two-axis `code-review`; and `retro`/`writing-for-agents`. `ask-matt` and `codebase-design` informed routing and vocabulary. Inspected `implement`, `implement-spec`, `triage`, `wayfinder`, `setup-matt-pocock-skills`, `tdd` and `improve-codebase-architecture`; none authorized feature work or an opportunistic refactor here.

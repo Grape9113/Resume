@@ -5,7 +5,9 @@ import ServiceManagement
 
 @MainActor @Observable
 final class AppModel {
-  enum Mode { case connection, library, player, search, chapters }
+  enum Mode: Hashable { case connection, library, player, search, chapters, settings }
+
+  private var settingsReturnMode: Mode = .player
 
   var mode: Mode = .connection
   var server = ""
@@ -610,7 +612,19 @@ final class AppModel {
   func prepareForSettings() {
     query = ""
     searchResult = nil
-    if mode == .search { mode = .player }
+    if mode != .settings {
+      settingsReturnMode = (mode == .connection || mode == .library) ? mode : .player
+    }
+    mode = .settings
+  }
+
+  func leaveTemporaryMode() {
+    switch mode {
+    case .settings: mode = settingsReturnMode
+    case .search: cancelSearch()
+    case .chapters: mode = .player
+    case .connection, .library, .player: break
+    }
   }
 
   func setLaunchAtLogin(_ enabled: Bool) {
