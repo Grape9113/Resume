@@ -318,7 +318,8 @@ struct ResumePanel: View {
       if let book {
         ArtworkImage(model: model, book: book)
       } else {
-        Image(systemName: "book.closed.fill").font(.system(size: 54)).foregroundStyle(.secondary)
+        Image(systemName: "book.closed.fill").resizable().scaledToFit()
+          .frame(maxWidth: 54, maxHeight: 54).padding(8).foregroundStyle(.secondary)
           .frame(maxWidth: .infinity, maxHeight: .infinity)
       }
       if let book, model.isRecentlyFinished(book) {
@@ -444,7 +445,8 @@ private struct ArtworkImage: View {
       if let image {
         Image(nsImage: image).resizable().scaledToFit()
       } else {
-        Image(systemName: "book.closed.fill").font(.system(size: 54)).foregroundStyle(.secondary)
+        Image(systemName: "book.closed.fill").resizable().scaledToFit()
+          .frame(maxWidth: 54, maxHeight: 54).padding(8).foregroundStyle(.secondary)
       }
     }
     .frame(maxWidth: .infinity, maxHeight: .infinity)
