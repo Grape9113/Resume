@@ -61,7 +61,7 @@ struct ResumeApp: App {
   }
 
   private var playerScene: some Scene {
-    MenuBarExtra("Resume", systemImage: "books.vertical.fill") {
+    MenuBarExtra("Resume", systemImage: "book.fill") {
       ResumePanel(model: model)
         .onReceive(
           NSWorkspace.shared.notificationCenter.publisher(for: NSWorkspace.willSleepNotification)
