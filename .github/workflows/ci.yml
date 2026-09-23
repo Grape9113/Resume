@@ -1,0 +1,48 @@
+name: Build and test
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  macos:
+    # Matches the development toolchain. GitHub currently labels this image preview.
+    runs-on: xcode-27
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          persist-credentials: false
+      - name: Check toolchain
+        run: |
+          xcodebuild -version
+          xcodebuild -version | grep -q '^Xcode 27'
+      - name: Core, application and native adapter tests
+        run: >-
+          xcodebuild test -project Resume.xcodeproj -scheme Resume
+          -destination 'platform=macOS' -derivedDataPath .xcode-derived
+          -only-testing:ResumeCoreTests -parallel-testing-enabled NO
+          -resultBundlePath .xcode-derived/CoreTests.xcresult
+      - name: Release build
+        run: >-
+          xcodebuild build -project Resume.xcodeproj -scheme Resume
+          -configuration Release -destination 'platform=macOS'
+          -derivedDataPath .xcode-derived
+      - name: Retain test results
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: core-test-results
+          path: .xcode-derived/CoreTests.xcresult
+          if-no-files-found: ignore
+          retention-days: 7

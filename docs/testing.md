@@ -111,3 +111,7 @@ Native test-host captures were visually inspected for light/dark Player, square/
 [Player capture](design/resume-player-test-host.png) is from the Debug host, using synthetic artwork; its title bar is not part of the menu-bar product. The [approved reference](design/resume-ui-reference.jpg) remains the visual design source. Both independent code-review axes reported zero remaining findings against `cd93e2741f6dfbde1c87bae7f0ae7f89cb5c5344` through `a7fa92b`.
 
 A fixture-backed native inspection was attempted after automated checks, but the computer-use tool did not reliably expose the status item (SystemUIServer inspection timed out). This does **not** certify production menu-bar presentation, dismissal/reopening, menu-manager integration or closed-panel command routing. Full Keyboard Access, VoiceOver, input composition and live-account/device acceptance retain the existing boundaries above and in #8. No live credentials or server progress were used.
+
+## GitHub automation
+
+[Build and test](../.github/workflows/ci.yml) runs the core, application and native-adapter tests plus a Release build on pushes and pull requests to main. The `xcode-27` hosted image matches the development toolchain; it is currently a [GitHub preview image](https://github.com/actions/runner-images/issues/14404). Test result bundles are retained for seven days. Desktop UI tests and the real-environment acceptance above remain local checks.
