@@ -1,5 +1,26 @@
+# Xcode and Swift build output
 .build/
 .swiftpm/
 .xcode-derived/
+DerivedData/
+build/
+*.xcresult/
+*.xcarchive/
+
+# Per-user Xcode and macOS state
 xcuserdata/
+*.xcuserstate
 .DS_Store
+
+# Local investigation and test output
+.scratch/
+
+# Credentials and signing material (keep only sanitized examples)
+.env
+.env.*
+!.env.example
+*.p12
+*.p8
+*.mobileprovision
+*.keychain
+*.keychain-db
